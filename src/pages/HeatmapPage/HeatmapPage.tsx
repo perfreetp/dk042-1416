@@ -9,40 +9,75 @@ import { faultRecords, getFaultStats, getHeatmapData, getTopFaults } from '@/dat
 import { FaultRecord } from '@/types';
 import { cn } from '@/lib/utils';
 
+function filterFaults(faults: FaultRecord[], startDate: string, endDate: string, filter: {
+  aircraftTypes: string[];
+  bases: string[];
+  ataChapters: string[];
+  seasons: string[];
+  faultCode: string;
+}) {
+  return faults.filter((f) => {
+    if (filter.aircraftTypes.length > 0 && !filter.aircraftTypes.includes(f.aircraftType)) {
+      return false;
+    }
+    if (filter.bases.length > 0 && !filter.bases.includes(f.base)) {
+      return false;
+    }
+    if (filter.ataChapters.length > 0 && !filter.ataChapters.includes(f.ataChapter)) {
+      return false;
+    }
+    if (filter.seasons.length > 0 && !filter.seasons.includes(f.season)) {
+      return false;
+    }
+    if (filter.faultCode && !f.faultCode.toLowerCase().includes(filter.faultCode.toLowerCase())) {
+      return false;
+    }
+    if (startDate && f.date < startDate) {
+      return false;
+    }
+    if (endDate && f.date > endDate) {
+      return false;
+    }
+    return true;
+  });
+}
+
+function getPreviousDateRange(startDate: string, endDate: string): { prevStart: string; prevEnd: string } {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const diffMs = end.getTime() - start.getTime();
+  const prevEnd = new Date(start.getTime() - 86400000);
+  const prevStart = new Date(prevEnd.getTime() - diffMs);
+  return {
+    prevStart: prevStart.toISOString().split('T')[0],
+    prevEnd: prevEnd.toISOString().split('T')[0],
+  };
+}
+
 export default function HeatmapPage() {
   const filter = useFilterStore();
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const filteredFaults = useMemo(() => {
-    return faultRecords.filter((f) => {
-      if (filter.aircraftTypes.length > 0 && !filter.aircraftTypes.includes(f.aircraftType)) {
-        return false;
-      }
-      if (filter.bases.length > 0 && !filter.bases.includes(f.base)) {
-        return false;
-      }
-      if (filter.ataChapters.length > 0 && !filter.ataChapters.includes(f.ataChapter)) {
-        return false;
-      }
-      if (filter.seasons.length > 0 && !filter.seasons.includes(f.season)) {
-        return false;
-      }
-      if (filter.faultCode && !f.faultCode.toLowerCase().includes(filter.faultCode.toLowerCase())) {
-        return false;
-      }
-      if (filter.startDate && f.date < filter.startDate) {
-        return false;
-      }
-      if (filter.endDate && f.date > filter.endDate) {
-        return false;
-      }
-      return true;
-    });
+    return filterFaults(faultRecords, filter.startDate, filter.endDate, filter);
   }, [filter]);
 
+  const { prevStart, prevEnd } = useMemo(
+    () => getPreviousDateRange(filter.startDate, filter.endDate),
+    [filter.startDate, filter.endDate]
+  );
+
+  const previousFaults = useMemo(() => {
+    return filterFaults(faultRecords, prevStart, prevEnd, filter);
+  }, [prevStart, prevEnd, filter.aircraftTypes, filter.bases, filter.ataChapters, filter.seasons, filter.faultCode]);
+
   const stats = useMemo(() => getFaultStats(filteredFaults), [filteredFaults]);
+  const prevStats = useMemo(() => getFaultStats(previousFaults), [previousFaults]);
   const heatmapData = useMemo(() => getHeatmapData(filteredFaults), [filteredFaults]);
   const topFaults = useMemo(() => getTopFaults(filteredFaults), [filteredFaults]);
+
+  const avgDowntimeNum = typeof stats.avgDowntime === 'string' ? parseFloat(stats.avgDowntime) : stats.avgDowntime;
+  const prevAvgDowntimeNum = typeof prevStats.avgDowntime === 'string' ? parseFloat(prevStats.avgDowntime) : prevStats.avgDowntime;
 
   return (
     <div>
@@ -60,17 +95,23 @@ export default function HeatmapPage() {
           unit="次"
           icon={AlertTriangle}
           color="orange"
-          trend="up"
-          trendValue="+12.5%"
+          comparison={{
+            previousValue: prevStats.totalCount,
+            currentValue: stats.totalCount,
+            label: '较上一周期',
+          }}
         />
         <MetricCard
           label="平均停场时间"
-          value={stats.avgDowntime}
+          value={avgDowntimeNum.toFixed(1)}
           unit="小时"
           icon={Clock}
           color="blue"
-          trend="down"
-          trendValue="-3.2%"
+          comparison={{
+            previousValue: prevAvgDowntimeNum,
+            currentValue: avgDowntimeNum,
+            label: '较上一周期',
+          }}
         />
         <MetricCard
           label="重复故障飞机"
@@ -78,8 +119,11 @@ export default function HeatmapPage() {
           unit="架"
           icon={PlaneTakeoff}
           color="purple"
-          trend="up"
-          trendValue="+2 架"
+          comparison={{
+            previousValue: prevStats.recurringCount,
+            currentValue: stats.recurringCount,
+            label: '较上一周期',
+          }}
         />
         <MetricCard
           label="常用处理动作"
@@ -87,8 +131,11 @@ export default function HeatmapPage() {
           unit="类"
           icon={Wrench}
           color="green"
-          trend="stable"
-          trendValue="持平"
+          comparison={{
+            previousValue: prevStats.topActions.length,
+            currentValue: stats.topActions.length,
+            label: '较上一周期',
+          }}
         />
       </div>
 

@@ -15,6 +15,22 @@ export interface FaultRecord {
   month: number;
 }
 
+export interface GovernanceRecord {
+  id: string;
+  entryId: string;
+  fromStatus: KnowledgeEntry['reviewStatus'];
+  toStatus: KnowledgeEntry['reviewStatus'];
+  fromSuccessRate: number;
+  toSuccessRate: number;
+  fromReferenceCount: number;
+  toReferenceCount: number;
+  fromMissingItems: string[];
+  toMissingItems: string[];
+  reviewer: string;
+  suggestion: string;
+  changedAt: string;
+}
+
 export interface KnowledgeEntry {
   id: string;
   title: string;

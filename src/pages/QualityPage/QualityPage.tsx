@@ -27,10 +27,13 @@ import {
   Eye,
   FileText,
   Filter,
+  ArrowRight,
+  History,
+  TrendingUp,
 } from 'lucide-react';
 import { useKnowledgeStore } from '@/store/useKnowledgeStore';
 import { getLowQualityEntries, getIncompleteEntries, getScatterData } from '@/data/knowledge';
-import { KnowledgeEntry } from '@/types';
+import { KnowledgeEntry, GovernanceRecord } from '@/types';
 import { cn } from '@/lib/utils';
 import StatusBadge from '@/components/StatusBadge/StatusBadge';
 
@@ -396,8 +399,10 @@ function KnowledgeRow({
   editingSuggestion: boolean;
   setEditingSuggestion: (v: boolean) => void;
 }) {
-  const { setReviewStatus, setReviewer, setReviewSuggestion, completeReview } = useKnowledgeStore();
+  const { setReviewStatus, setReviewer, setReviewSuggestion, completeReview, governanceRecords, getEntryRecords } = useKnowledgeStore();
   const [showReviewerDropdown, setShowReviewerDropdown] = useState(false);
+
+  const entryRecords = governanceRecords.filter((r) => r.entryId === entry.id);
 
   const handleStartEdit = () => {
     setTempSuggestion(entry.reviewSuggestion);
@@ -642,6 +647,98 @@ function KnowledgeRow({
                     </button>
                   )}
                 </div>
+
+                {entryRecords.length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-slate-700/50">
+                    <p className="text-xs text-slate-500 flex items-center gap-1.5 mb-3">
+                      <History className="w-3.5 h-3.5" />
+                      治理记录
+                    </p>
+                    <div className="space-y-3">
+                      {entryRecords.map((record) => (
+                        <div
+                          key={record.id}
+                          className="relative pl-6 pb-3 border-l-2 border-slate-700/50 last:border-l-0 last:pb-0"
+                        >
+                          <div className="absolute left-0 top-0 w-3 h-3 rounded-full bg-blue-500/30 border-2 border-blue-400 -translate-x-[7px]" />
+                          <div className="bg-slate-900/50 rounded-lg p-3">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="text-xs text-slate-400">{record.changedAt}</span>
+                              <span className="text-xs text-slate-500">·</span>
+                              <span className="text-xs text-slate-400">{record.reviewer}</span>
+                              <span className="text-xs text-slate-500">·</span>
+                              <span className="text-xs px-1.5 py-0.5 bg-blue-500/10 text-blue-400 rounded">
+                                {reviewStatusLabels[record.fromStatus]}
+                              </span>
+                              <ArrowRight className="w-3 h-3 text-slate-500" />
+                              <span className="text-xs px-1.5 py-0.5 bg-emerald-500/10 text-emerald-400 rounded">
+                                {reviewStatusLabels[record.toStatus]}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <p className="text-xs text-slate-500 mb-1">成功率变化</p>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-mono text-red-400">{record.fromSuccessRate}%</span>
+                                  <TrendingUp className="w-3 h-3 text-emerald-400" />
+                                  <span className="text-sm font-mono text-emerald-400">{record.toSuccessRate}%</span>
+                                  {record.toSuccessRate > record.fromSuccessRate && (
+                                    <span className="text-xs text-emerald-400 font-mono">+{record.toSuccessRate - record.fromSuccessRate}</span>
+                                  )}
+                                </div>
+                              </div>
+                              <div>
+                                <p className="text-xs text-slate-500 mb-1">引用次数变化</p>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-mono text-slate-400">{record.fromReferenceCount}</span>
+                                  <ArrowRight className="w-3 h-3 text-slate-500" />
+                                  <span className="text-sm font-mono text-slate-300">{record.toReferenceCount}</span>
+                                  {record.toReferenceCount > record.fromReferenceCount && (
+                                    <span className="text-xs text-emerald-400 font-mono">+{record.toReferenceCount - record.fromReferenceCount}</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            {record.fromMissingItems.length > 0 && (
+                              <div className="mt-2">
+                                <p className="text-xs text-slate-500 mb-1">缺失项修补</p>
+                                <div className="flex flex-wrap gap-1">
+                                  {record.fromMissingItems.map((item, i) => {
+                                    const fixed = !record.toMissingItems.includes(item);
+                                    return (
+                                      <span
+                                        key={i}
+                                        className={cn(
+                                          'text-xs px-1.5 py-0.5 rounded',
+                                          fixed
+                                            ? 'bg-emerald-500/10 text-emerald-400 line-through'
+                                            : 'bg-red-500/10 text-red-400'
+                                        )}
+                                      >
+                                        {item}
+                                      </span>
+                                    );
+                                  })}
+                                  {record.toMissingItems.length < record.fromMissingItems.length && (
+                                    <span className="text-xs text-emerald-400">
+                                      已修补 {record.fromMissingItems.length - record.toMissingItems.length} 项
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                            {record.suggestion && (
+                              <div className="mt-2">
+                                <p className="text-xs text-slate-500 mb-1">修订建议</p>
+                                <p className="text-xs text-slate-300">{record.suggestion}</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </td>

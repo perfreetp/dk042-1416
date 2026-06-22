@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { Flame, FileCheck, ClipboardList, Plane, Menu, X } from 'lucide-react';
+import { Flame, FileCheck, ClipboardList, Plane, Menu, X, Calendar } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navItems = [
   { to: '/', label: '故障热力', icon: Flame, end: true },
   { to: '/quality', label: '案例质量', icon: FileCheck },
   { to: '/review', label: '复盘清单', icon: ClipboardList },
+  { to: '/weekly', label: '周会复盘包', icon: Calendar },
 ];
 
 export default function Layout() {

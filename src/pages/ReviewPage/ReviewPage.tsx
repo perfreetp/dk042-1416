@@ -19,6 +19,9 @@ import {
   ListTodo,
   Users,
   Activity,
+  AlertCircle,
+  Timer,
+  CheckCircle2,
 } from 'lucide-react';
 import { useReviewStore } from '@/store/useReviewStore';
 import { getReviewStats } from '@/data/reviews';
@@ -34,12 +37,31 @@ export default function ReviewPage() {
   const [activeType, setActiveType] = useState<'all' | 'recurring' | 'timeout'>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'tracking'>('list');
-  const [groupBy, setGroupBy] = useState<'assignee' | 'status' | 'training'>('assignee');
+  const [groupBy, setGroupBy] = useState<'assignee' | 'dueStatus' | 'training'>('dueStatus');
 
   const filteredTasks = tasks.filter((t) => {
     if (activeType === 'all') return true;
     return t.type === activeType;
   });
+
+  const getDueStatus = (task: ReviewTask): string => {
+    if (task.status === 'completed') return 'completed';
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const due = new Date(task.dueDate);
+    due.setHours(0, 0, 0, 0);
+    const diffDays = Math.floor((due.getTime() - today.getTime()) / 86400000);
+    if (diffDays < 0) return 'overdue';
+    if (diffDays <= 3) return 'dueSoon';
+    return 'notDue';
+  };
+
+  const dueStatusLabelMap: Record<string, string> = {
+    overdue: '逾期',
+    dueSoon: '三天内到期',
+    notDue: '未到期',
+    completed: '已完成',
+  };
 
   const groupedData = useMemo(() => {
     const groups: Record<string, ReviewTask[]> = {};
@@ -49,10 +71,11 @@ export default function ReviewPage() {
       assignees.forEach((a) => {
         groups[a] = tasks.filter((t) => (t.assignee || '未分派') === a);
       });
-    } else if (groupBy === 'status') {
-      const statuses: ReviewTask['status'][] = ['pending', 'assigned', 'in_progress', 'completed'];
-      statuses.forEach((s) => {
-        groups[s] = tasks.filter((t) => t.status === s);
+    } else if (groupBy === 'dueStatus') {
+      const order = ['overdue', 'dueSoon', 'notDue', 'completed'];
+      order.forEach((key) => {
+        const items = tasks.filter((t) => getDueStatus(t) === key);
+        if (items.length > 0) groups[key] = items;
       });
     } else if (groupBy === 'training') {
       groups['需要培训'] = tasks.filter((t) => t.trainingRequired);
@@ -168,7 +191,7 @@ export default function ReviewPage() {
               <div className="flex bg-slate-800/50 rounded-lg p-0.5">
                 {[
                   { key: 'assignee', label: '按工程师', icon: Users },
-                  { key: 'status', label: '按状态', icon: Activity },
+                  { key: 'dueStatus', label: '按到期', icon: Timer },
                   { key: 'training', label: '按培训', icon: GraduationCap },
                 ].map((tab) => (
                   <button
@@ -205,7 +228,7 @@ export default function ReviewPage() {
             ))}
           </div>
         ) : (
-          <TrackingView groupedData={groupedData} groupBy={groupBy} statusLabelMap={statusLabelMap} />
+          <TrackingView groupedData={groupedData} groupBy={groupBy} statusLabelMap={statusLabelMap} dueStatusLabelMap={dueStatusLabelMap} />
         )}
       </div>
 
@@ -251,24 +274,26 @@ function TrackingView({
   groupedData,
   groupBy,
   statusLabelMap,
+  dueStatusLabelMap,
 }: {
   groupedData: Record<string, ReviewTask[]>;
-  groupBy: 'assignee' | 'status' | 'training';
+  groupBy: 'assignee' | 'dueStatus' | 'training';
   statusLabelMap: Record<string, string>;
+  dueStatusLabelMap: Record<string, string>;
 }) {
   const groupIcons: Record<string, any> = {
     assignee: Users,
-    status: Activity,
+    dueStatus: Timer,
     training: GraduationCap,
   };
   const GroupIcon = groupIcons[groupBy] || Layers;
 
   const getGroupColor = (key: string) => {
-    if (groupBy === 'status') {
+    if (groupBy === 'dueStatus') {
       const colors: Record<string, string> = {
-        pending: 'text-slate-400 bg-slate-500/20',
-        assigned: 'text-blue-400 bg-blue-500/20',
-        in_progress: 'text-amber-400 bg-amber-500/20',
+        overdue: 'text-red-400 bg-red-500/20',
+        dueSoon: 'text-amber-400 bg-amber-500/20',
+        notDue: 'text-blue-400 bg-blue-500/20',
         completed: 'text-emerald-400 bg-emerald-500/20',
       };
       return colors[key] || 'text-slate-400 bg-slate-500/20';
@@ -282,10 +307,26 @@ function TrackingView({
   };
 
   const getGroupLabel = (key: string) => {
-    if (groupBy === 'status') {
-      return statusLabelMap[key] || key;
+    if (groupBy === 'dueStatus') {
+      return dueStatusLabelMap[key] || key;
     }
     return key;
+  };
+
+  const getDueBadge = (task: ReviewTask) => {
+    if (task.status === 'completed') return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const due = new Date(task.dueDate);
+    due.setHours(0, 0, 0, 0);
+    const diffDays = Math.floor((due.getTime() - today.getTime()) / 86400000);
+    if (diffDays < 0) {
+      return <span className="text-xs px-1.5 py-0.5 bg-red-500/20 text-red-400 rounded">逾期{Math.abs(diffDays)}天</span>;
+    }
+    if (diffDays <= 3) {
+      return <span className="text-xs px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded">剩{diffDays}天</span>;
+    }
+    return null;
   };
 
   const pendingCount = (tasks: ReviewTask[]) =>
@@ -334,7 +375,10 @@ function TrackingView({
                     />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs text-slate-300 truncate">{task.faultDescription}</p>
-                      <p className="text-xs text-slate-500 font-mono">{task.faultCode}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <p className="text-xs text-slate-500 font-mono">{task.faultCode}</p>
+                        {getDueBadge(task)}
+                      </div>
                     </div>
                     {task.trainingRequired && (
                       <GraduationCap className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />

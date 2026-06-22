@@ -9,6 +9,11 @@ interface MetricCardProps {
   trendValue?: string;
   icon: LucideIcon;
   color?: 'blue' | 'orange' | 'green' | 'purple';
+  comparison?: {
+    previousValue: number;
+    currentValue: number;
+    label: string;
+  };
 }
 
 const colorClasses = {
@@ -26,8 +31,25 @@ export default function MetricCard({
   trendValue,
   icon: Icon,
   color = 'blue',
+  comparison,
 }: MetricCardProps) {
   const TrendIcon = trend === 'up' ? TrendingUp : trend === 'down' ? TrendingDown : Minus;
+
+  const computedTrend = comparison
+    ? comparison.currentValue > comparison.previousValue
+      ? 'up' as const
+      : comparison.currentValue < comparison.previousValue
+      ? 'down' as const
+      : 'stable' as const
+    : trend;
+
+  const computedTrendValue = comparison
+    ? comparison.previousValue > 0
+      ? `${comparison.currentValue > comparison.previousValue ? '+' : ''}${((comparison.currentValue - comparison.previousValue) / comparison.previousValue * 100).toFixed(1)}%`
+      : '-'
+    : trendValue;
+
+  const comparisonLabel = comparison?.label || '较上月';
 
   return (
     <div
@@ -59,20 +81,20 @@ export default function MetricCard({
           </div>
         </div>
 
-        {trend && trendValue && (
+        {(computedTrend && computedTrendValue) && (
           <div className="mt-4 flex items-center gap-2">
             <div
               className={cn(
                 'flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium',
-                trend === 'up' && 'bg-emerald-500/20 text-emerald-400',
-                trend === 'down' && 'bg-red-500/20 text-red-400',
-                trend === 'stable' && 'bg-slate-500/20 text-slate-400'
+                computedTrend === 'up' && 'bg-emerald-500/20 text-emerald-400',
+                computedTrend === 'down' && 'bg-red-500/20 text-red-400',
+                computedTrend === 'stable' && 'bg-slate-500/20 text-slate-400'
               )}
             >
               <TrendIcon className="w-3 h-3" />
-              <span>{trendValue}</span>
+              <span>{computedTrendValue}</span>
             </div>
-            <span className="text-xs text-slate-500">较上月</span>
+            <span className="text-xs text-slate-500">{comparisonLabel}</span>
           </div>
         )}
       </div>

@@ -32,12 +32,20 @@ const tips = [
 
 function generateReviewTasks(): ReviewTask[] {
   const tasks: ReviewTask[] = [];
+  const now = new Date();
 
   for (let i = 0; i < 12; i++) {
     const isRecurring = i < 7;
     const statuses: ('pending' | 'assigned' | 'in_progress' | 'completed')[] = ['pending', 'assigned', 'in_progress', 'completed'];
     const status = statuses[i % 4];
     const assignee = status === 'pending' ? '' : engineers[i % engineers.length];
+
+    const daysOffset = [-7, -3, 1, 4, 7, 12, -1, 2, 15, -5, 20, 30];
+    const dueDate = new Date(now.getTime() + daysOffset[i] * 86400000);
+    const dueDateStr = dueDate.toISOString().split('T')[0];
+
+    const createdDate = new Date(now.getTime() - (14 + i) * 86400000);
+    const createdDateStr = createdDate.toISOString().split('T')[0];
 
     tasks.push({
       id: `R${(i + 1).toString().padStart(3, '0')}`,
@@ -46,12 +54,12 @@ function generateReviewTasks(): ReviewTask[] {
       type: isRecurring ? 'recurring' : 'timeout',
       status,
       assignee,
-      dueDate: `2025-07-${(i % 28 + 1).toString().padStart(2, '0')}`,
+      dueDate: dueDateStr,
       rootCause: status === 'completed' ? rootCauses[i % rootCauses.length] : '',
       troubleshootingTip: status === 'completed' ? tips[i % tips.length] : '',
       trainingRequired: i % 3 === 0,
       trainingStatus: i % 3 === 0 ? (status === 'completed' ? 'completed' : 'pending') : 'none',
-      createdAt: `2025-06-${(20 - i).toString().padStart(2, '0')}`,
+      createdAt: createdDateStr,
       occurrenceCount: isRecurring ? Math.floor(Math.random() * 8) + 3 : undefined,
       avgDowntime: !isRecurring ? Math.floor(Math.random() * 20) + 15 : undefined,
     });
