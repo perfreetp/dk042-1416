@@ -6,7 +6,7 @@ import HeatmapChart from '@/components/HeatmapChart/HeatmapChart';
 import StatusBadge from '@/components/StatusBadge/StatusBadge';
 import { useFilterStore } from '@/store/useFilterStore';
 import { faultRecords, getFaultStats, getHeatmapData, getTopFaults } from '@/data/faults';
-import { FaultRecord } from '@/types';
+import { FaultRecord, ATA_CHAPTERS } from '@/types';
 import { cn } from '@/lib/utils';
 
 function filterFaults(faults: FaultRecord[], startDate: string, endDate: string, filter: {
@@ -79,6 +79,104 @@ export default function HeatmapPage() {
   const avgDowntimeNum = typeof stats.avgDowntime === 'string' ? parseFloat(stats.avgDowntime) : stats.avgDowntime;
   const prevAvgDowntimeNum = typeof prevStats.avgDowntime === 'string' ? parseFloat(prevStats.avgDowntime) : prevStats.avgDowntime;
 
+  const THRESHOLD = 0.2;
+
+  const getTopContributors = (currentFaults: FaultRecord[], prevFaults: FaultRecord[], key: 'ataChapter' | 'base') => {
+    const curMap = new Map<string, number>();
+    const prevMap = new Map<string, number>();
+    currentFaults.forEach((f) => curMap.set(f[key], (curMap.get(f[key]) || 0) + 1));
+    prevFaults.forEach((f) => prevMap.set(f[key], (prevMap.get(f[key]) || 0) + 1));
+
+    const diffs: { label: string; value: string }[] = [];
+    curMap.forEach((curCount, k) => {
+      const prevCount = prevMap.get(k) || 0;
+      const diff = curCount - prevCount;
+      if (diff > 0) {
+        const name = key === 'ataChapter'
+          ? ATA_CHAPTERS.find((c) => c.code === k)?.name || `ATA ${k}`
+          : k;
+        diffs.push({ label: name, value: `+${diff}次（${prevCount}→${curCount}）` });
+      }
+    });
+    diffs.sort((a, b) => parseInt(b.value) - parseInt(a.value));
+    return diffs.slice(0, 3);
+  };
+
+  const totalCountAlert = useMemo(() => {
+    if (prevStats.totalCount > 0 && (stats.totalCount - prevStats.totalCount) / prevStats.totalCount > THRESHOLD) {
+      const pct = (((stats.totalCount - prevStats.totalCount) / prevStats.totalCount) * 100).toFixed(0);
+      return {
+        message: `故障次数较上周期上升${pct}%，点击查看原因`,
+        details: [
+          ...getTopContributors(filteredFaults, previousFaults, 'ataChapter'),
+          ...getTopContributors(filteredFaults, previousFaults, 'base'),
+        ],
+      };
+    }
+    return undefined;
+  }, [stats.totalCount, prevStats.totalCount, filteredFaults, previousFaults]);
+
+  const downtimeAlert = useMemo(() => {
+    if (prevAvgDowntimeNum > 0 && (avgDowntimeNum - prevAvgDowntimeNum) / prevAvgDowntimeNum > THRESHOLD) {
+      const pct = (((avgDowntimeNum - prevAvgDowntimeNum) / prevAvgDowntimeNum) * 100).toFixed(0);
+      const curByAta = new Map<string, { total: number; count: number }>();
+      const prevByAta = new Map<string, { total: number; count: number }>();
+      filteredFaults.forEach((f) => {
+        const cur = curByAta.get(f.ataChapter) || { total: 0, count: 0 };
+        cur.total += f.downtimeHours;
+        cur.count += 1;
+        curByAta.set(f.ataChapter, cur);
+      });
+      previousFaults.forEach((f) => {
+        const prev = prevByAta.get(f.ataChapter) || { total: 0, count: 0 };
+        prev.total += f.downtimeHours;
+        prev.count += 1;
+        prevByAta.set(f.ataChapter, prev);
+      });
+      const details: { label: string; value: string }[] = [];
+      curByAta.forEach((cur, k) => {
+        const prev = prevByAta.get(k);
+        if (prev) {
+          const curAvg = cur.total / cur.count;
+          const prevAvg = prev.total / prev.count;
+          if (curAvg > prevAvg) {
+            const name = ATA_CHAPTERS.find((c) => c.code === k)?.name || `ATA ${k}`;
+            details.push({ label: name, value: `${prevAvg.toFixed(1)}h→${curAvg.toFixed(1)}h` });
+          }
+        }
+      });
+      details.sort((a, b) => {
+        const bVal = parseFloat(b.value.split('→')[1]);
+        const aVal = parseFloat(a.value.split('→')[1]);
+        return bVal - aVal;
+      });
+      return {
+        message: `平均停场时间上升${pct}%，点击查看原因`,
+        details: details.slice(0, 3),
+      };
+    }
+    return undefined;
+  }, [avgDowntimeNum, prevAvgDowntimeNum, filteredFaults, previousFaults]);
+
+  const recurringAlert = useMemo(() => {
+    if (prevStats.recurringCount > 0 && stats.recurringCount > prevStats.recurringCount) {
+      const curRegs = new Map<string, number>();
+      filteredFaults.filter((f) => f.isRecurring).forEach((f) => curRegs.set(f.aircraftReg, (curRegs.get(f.aircraftReg) || 0) + 1));
+      const details: { label: string; value: string }[] = [];
+      curRegs.forEach((count, reg) => {
+        details.push({ label: reg, value: `${count}次` });
+      });
+      details.sort((a, b) => parseInt(b.value) - parseInt(a.value));
+      if (details.length > 0) {
+        return {
+          message: `重复故障飞机增加${stats.recurringCount - prevStats.recurringCount}架，点击查看原因`,
+          details: details.slice(0, 3),
+        };
+      }
+    }
+    return undefined;
+  }, [stats.recurringCount, prevStats.recurringCount, filteredFaults]);
+
   return (
     <div>
       <div className="mb-6">
@@ -100,6 +198,7 @@ export default function HeatmapPage() {
             currentValue: stats.totalCount,
             label: '较上一周期',
           }}
+          anomalyAlert={totalCountAlert}
         />
         <MetricCard
           label="平均停场时间"
@@ -112,6 +211,7 @@ export default function HeatmapPage() {
             currentValue: avgDowntimeNum,
             label: '较上一周期',
           }}
+          anomalyAlert={downtimeAlert}
         />
         <MetricCard
           label="重复故障飞机"
@@ -124,6 +224,7 @@ export default function HeatmapPage() {
             currentValue: stats.recurringCount,
             label: '较上一周期',
           }}
+          anomalyAlert={recurringAlert}
         />
         <MetricCard
           label="常用处理动作"

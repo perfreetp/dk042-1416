@@ -401,6 +401,7 @@ function KnowledgeRow({
 }) {
   const { setReviewStatus, setReviewer, setReviewSuggestion, completeReview, governanceRecords, getEntryRecords } = useKnowledgeStore();
   const [showReviewerDropdown, setShowReviewerDropdown] = useState(false);
+  const [fixedItems, setFixedItems] = useState<string[]>([]);
 
   const entryRecords = governanceRecords.filter((r) => r.entryId === entry.id);
 
@@ -415,8 +416,9 @@ function KnowledgeRow({
   };
 
   const handleCompleteReview = () => {
-    completeReview(entry.id, tempSuggestion || entry.reviewSuggestion);
+    completeReview(entry.id, tempSuggestion || entry.reviewSuggestion, fixedItems);
     setEditingSuggestion(false);
+    setFixedItems([]);
   };
 
   return (
@@ -624,16 +626,100 @@ function KnowledgeRow({
                     </button>
                   )}
                   {entry.reviewStatus === 'in_progress' && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleCompleteReview();
-                      }}
-                      className="px-3 py-1.5 text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg hover:bg-emerald-500/30 transition-colors flex items-center gap-1.5"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      完成复核
-                    </button>
+                    <div className="mb-2">
+                      {(!entry.hasManualReference || !entry.hasReleaseConclusion || !entry.hasFollowUp) && (
+                        <div className="flex flex-wrap gap-2 mb-2">
+                          {!entry.hasManualReference && (
+                            <label
+                              className={cn(
+                                'flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg cursor-pointer border transition-colors',
+                                fixedItems.includes('手册依据')
+                                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                                  : 'bg-slate-800/50 text-slate-400 border-slate-700 hover:border-slate-500'
+                              )}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={fixedItems.includes('手册依据')}
+                                onChange={() => {
+                                  setFixedItems((prev) =>
+                                    prev.includes('手册依据')
+                                      ? prev.filter((i) => i !== '手册依据')
+                                      : [...prev, '手册依据']
+                                  );
+                                }}
+                                className="sr-only"
+                              />
+                              <Check className={cn('w-3 h-3', fixedItems.includes('手册依据') && 'text-emerald-400')} />
+                              补了手册依据
+                            </label>
+                          )}
+                          {!entry.hasReleaseConclusion && (
+                            <label
+                              className={cn(
+                                'flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg cursor-pointer border transition-colors',
+                                fixedItems.includes('放行结论')
+                                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                                  : 'bg-slate-800/50 text-slate-400 border-slate-700 hover:border-slate-500'
+                              )}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={fixedItems.includes('放行结论')}
+                                onChange={() => {
+                                  setFixedItems((prev) =>
+                                    prev.includes('放行结论')
+                                      ? prev.filter((i) => i !== '放行结论')
+                                      : [...prev, '放行结论']
+                                  );
+                                }}
+                                className="sr-only"
+                              />
+                              <Check className={cn('w-3 h-3', fixedItems.includes('放行结论') && 'text-emerald-400')} />
+                              补了放行结论
+                            </label>
+                          )}
+                          {!entry.hasFollowUp && (
+                            <label
+                              className={cn(
+                                'flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg cursor-pointer border transition-colors',
+                                fixedItems.includes('后续跟踪')
+                                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                                  : 'bg-slate-800/50 text-slate-400 border-slate-700 hover:border-slate-500'
+                              )}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={fixedItems.includes('后续跟踪')}
+                                onChange={() => {
+                                  setFixedItems((prev) =>
+                                    prev.includes('后续跟踪')
+                                      ? prev.filter((i) => i !== '后续跟踪')
+                                      : [...prev, '后续跟踪']
+                                  );
+                                }}
+                                className="sr-only"
+                              />
+                              <Check className={cn('w-3 h-3', fixedItems.includes('后续跟踪') && 'text-emerald-400')} />
+                              补了后续跟踪
+                            </label>
+                          )}
+                        </div>
+                      )}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCompleteReview();
+                        }}
+                        className="px-3 py-1.5 text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg hover:bg-emerald-500/30 transition-colors flex items-center gap-1.5"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        完成复核
+                      </button>
+                    </div>
                   )}
                   {entry.reviewStatus === 'none' && (
                     <button

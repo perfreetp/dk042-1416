@@ -1,4 +1,5 @@
-import { LucideIcon, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { useState } from 'react';
+import { LucideIcon, TrendingUp, TrendingDown, Minus, AlertTriangle, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface MetricCardProps {
@@ -13,6 +14,10 @@ interface MetricCardProps {
     previousValue: number;
     currentValue: number;
     label: string;
+  };
+  anomalyAlert?: {
+    message: string;
+    details: { label: string; value: string }[];
   };
 }
 
@@ -32,7 +37,9 @@ export default function MetricCard({
   icon: Icon,
   color = 'blue',
   comparison,
+  anomalyAlert,
 }: MetricCardProps) {
+  const [alertExpanded, setAlertExpanded] = useState(false);
   const TrendIcon = trend === 'up' ? TrendingUp : trend === 'down' ? TrendingDown : Minus;
 
   const computedTrend = comparison
@@ -95,6 +102,32 @@ export default function MetricCard({
               <span>{computedTrendValue}</span>
             </div>
             <span className="text-xs text-slate-500">{comparisonLabel}</span>
+          </div>
+        )}
+
+        {anomalyAlert && (
+          <div className="mt-3 border-t border-slate-700/50 pt-3">
+            <button
+              onClick={() => setAlertExpanded(!alertExpanded)}
+              className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 w-full text-left"
+            >
+              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>{anomalyAlert.message}</span>
+              <ChevronRight className={cn(
+                'w-3 h-3 ml-auto transition-transform',
+                alertExpanded && 'rotate-90'
+              )} />
+            </button>
+            {alertExpanded && (
+              <div className="mt-2 space-y-1.5 pl-5">
+                {anomalyAlert.details.map((detail, i) => (
+                  <div key={i} className="flex items-center justify-between text-xs">
+                    <span className="text-slate-400">{detail.label}</span>
+                    <span className="text-red-400 font-mono">{detail.value}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

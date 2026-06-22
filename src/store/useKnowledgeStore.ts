@@ -18,7 +18,7 @@ interface KnowledgeStore {
   setReviewer: (entryId: string, reviewer: string) => void;
   setReviewSuggestion: (entryId: string, suggestion: string) => void;
   markForReview: (entryId: string) => void;
-  completeReview: (entryId: string, suggestion: string) => void;
+  completeReview: (entryId: string, suggestion: string, fixedItems: string[]) => void;
   getEntryRecords: (entryId: string) => GovernanceRecord[];
 }
 
@@ -100,7 +100,7 @@ export const useKnowledgeStore = create<KnowledgeStore>()(
           };
         }),
 
-      completeReview: (entryId, suggestion) =>
+      completeReview: (entryId, suggestion, fixedItems) =>
         set((state) => {
           const entry = state.entries.find((e) => e.id === entryId);
           if (!entry) return state;
@@ -115,6 +115,9 @@ export const useKnowledgeStore = create<KnowledgeStore>()(
             lastReviewedAt: new Date().toISOString().split('T')[0],
             successRate: improvedSuccessRate,
             referenceCount: improvedRefCount,
+            hasManualReference: fixedItems.includes('手册依据') ? true : entry.hasManualReference,
+            hasReleaseConclusion: fixedItems.includes('放行结论') ? true : entry.hasReleaseConclusion,
+            hasFollowUp: fixedItems.includes('后续跟踪') ? true : entry.hasFollowUp,
           };
 
           const record: GovernanceRecord = {
