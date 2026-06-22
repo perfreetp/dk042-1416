@@ -33,12 +33,14 @@ const tips = [
 function generateReviewTasks(): ReviewTask[] {
   const tasks: ReviewTask[] = [];
   const now = new Date();
+  const bases = ['北京', '上海', '广州', '深圳', '成都'];
 
   for (let i = 0; i < 12; i++) {
     const isRecurring = i < 7;
     const statuses: ('pending' | 'assigned' | 'in_progress' | 'completed')[] = ['pending', 'assigned', 'in_progress', 'completed'];
     const status = statuses[i % 4];
     const assignee = status === 'pending' ? '' : engineers[i % engineers.length];
+    const base = bases[i % bases.length];
 
     const daysOffset = [-7, -3, 1, 4, 7, 12, -1, 2, 15, -5, 20, 30];
     const dueDate = new Date(now.getTime() + daysOffset[i] * 86400000);
@@ -51,6 +53,7 @@ function generateReviewTasks(): ReviewTask[] {
       id: `R${(i + 1).toString().padStart(3, '0')}`,
       faultCode: `F2${i + 1}-${(i + 1) * 3}`,
       faultDescription: faultDescs[i % faultDescs.length],
+      base,
       type: isRecurring ? 'recurring' : 'timeout',
       status,
       assignee,

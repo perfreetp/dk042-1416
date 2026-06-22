@@ -52,8 +52,27 @@ const reviewStatusLabels: Record<KnowledgeEntry['reviewStatus'], string> = {
   completed: '已完成',
 };
 
+function getWeekRange() {
+  const now = new Date();
+  const day = now.getDay();
+  const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+  const monday = new Date(now);
+  monday.setDate(diff);
+  monday.setHours(0, 0, 0, 0);
+  const mondayStr = monday.toISOString().split('T')[0];
+  const todayStr = now.toISOString().split('T')[0];
+  return { mondayStr, todayStr };
+}
+
+interface WeeklyStats {
+  reviewer: string;
+  manual: number;
+  release: number;
+  followUp: number;
+}
+
 export default function QualityPage() {
-  const { entries, markForReview, setReviewStatus, setReviewer, setReviewSuggestion, completeReview } = useKnowledgeStore();
+  const { entries, governanceRecords, markForReview, setReviewStatus, setReviewer, setReviewSuggestion, completeReview } = useKnowledgeStore();
   const [activeTab, setActiveTab] = useState<'lowQuality' | 'incomplete'>('lowQuality');
   const [searchQuery, setSearchQuery] = useState('');
   const [reviewFilter, setReviewFilter] = useState<'all' | 'pending' | 'in_progress' | 'completed' | 'none'>('all');
@@ -64,6 +83,34 @@ export default function QualityPage() {
   const lowQualityEntries = useMemo(() => getLowQualityEntries(entries), [entries]);
   const incomplete = useMemo(() => getIncompleteEntries(entries), [entries]);
   const scatterData = useMemo(() => getScatterData(entries), [entries]);
+
+  const weeklyStats = useMemo<WeeklyStats[]>(() => {
+    const { mondayStr, todayStr } = getWeekRange();
+    const statsMap = new Map<string, WeeklyStats>();
+
+    governanceRecords.forEach((record) => {
+      if (record.changedAt < mondayStr || record.changedAt > todayStr) return;
+      if (!record.reviewer) return;
+
+      const fixedItems = record.fromMissingItems.filter((item) => !record.toMissingItems.includes(item));
+      const key = record.reviewer;
+      if (!statsMap.has(key)) {
+        statsMap.set(key, { reviewer: key, manual: 0, release: 0, followUp: 0 });
+      }
+      const stats = statsMap.get(key)!;
+      fixedItems.forEach((item) => {
+        if (item === '手册依据') stats.manual++;
+        else if (item === '放行结论') stats.release++;
+        else if (item === '后续跟踪') stats.followUp++;
+      });
+    });
+
+    return Array.from(statsMap.values()).sort((a, b) => {
+      const totalA = a.manual + a.release + a.followUp;
+      const totalB = b.manual + b.release + b.followUp;
+      return totalB - totalA;
+    });
+  }, [governanceRecords]);
 
   const filteredEntries = useMemo(() => {
     let result = entries;
@@ -313,6 +360,48 @@ export default function QualityPage() {
         </div>
       </div>
 
+      <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-5 mb-6">
+        <div className="flex items-center gap-2 mb-4">
+          <TrendingUp className="w-4 h-4 text-emerald-400" />
+          <h2 className="text-base font-semibold text-slate-100">本周治理成效</h2>
+        </div>
+        {weeklyStats.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {weeklyStats.map((stat) => (
+              <div
+                key={stat.reviewer}
+                className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4"
+              >
+                <div className="flex items-center gap-2 mb-3">
+                  <User className="w-3.5 h-3.5 text-blue-400" />
+                  <span className="text-sm font-medium text-slate-200">{stat.reviewer}</span>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap text-xs">
+                  <span className="flex items-center gap-1 px-2 py-1 bg-red-500/10 text-red-400 rounded-md">
+                    <BookOpen className="w-3 h-3" />
+                    手册依据 <span className="font-mono font-semibold">{stat.manual}</span>
+                  </span>
+                  <span className="text-slate-600">/</span>
+                  <span className="flex items-center gap-1 px-2 py-1 bg-amber-500/10 text-amber-400 rounded-md">
+                    <FileQuestion className="w-3 h-3" />
+                    放行结论 <span className="font-mono font-semibold">{stat.release}</span>
+                  </span>
+                  <span className="text-slate-600">/</span>
+                  <span className="flex items-center gap-1 px-2 py-1 bg-blue-500/10 text-blue-400 rounded-md">
+                    <Eye className="w-3 h-3" />
+                    后续跟踪 <span className="font-mono font-semibold">{stat.followUp}</span>
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-6 text-sm text-slate-500">
+            本周暂无治理记录
+          </div>
+        )}
+      </div>
+
       <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between flex-wrap gap-4">
           <div>
@@ -402,8 +491,38 @@ function KnowledgeRow({
   const { setReviewStatus, setReviewer, setReviewSuggestion, completeReview, governanceRecords, getEntryRecords } = useKnowledgeStore();
   const [showReviewerDropdown, setShowReviewerDropdown] = useState(false);
   const [fixedItems, setFixedItems] = useState<string[]>([]);
+  const [governanceReviewerFilter, setGovernanceReviewerFilter] = useState<string>('all');
+  const [governanceMissingFilter, setGovernanceMissingFilter] = useState<string>('all');
 
-  const entryRecords = governanceRecords.filter((r) => r.entryId === entry.id);
+  const entryRecords = getEntryRecords(entry.id);
+
+  const uniqueReviewers = useMemo(() => {
+    const reviewers = new Set<string>();
+    entryRecords.forEach((r) => {
+      if (r.reviewer) reviewers.add(r.reviewer);
+    });
+    return Array.from(reviewers);
+  }, [entryRecords]);
+
+  const filteredEntryRecords = useMemo(() => {
+    let result = entryRecords;
+
+    if (governanceReviewerFilter !== 'all') {
+      result = result.filter((r) => r.reviewer === governanceReviewerFilter);
+    }
+
+    if (governanceMissingFilter !== 'all') {
+      result = result.filter((r) => {
+        const fromSet = new Set(r.fromMissingItems);
+        const toSet = new Set(r.toMissingItems);
+        const hadItem = fromSet.has(governanceMissingFilter);
+        const fixedItem = fromSet.has(governanceMissingFilter) && !toSet.has(governanceMissingFilter);
+        return hadItem || fixedItem;
+      });
+    }
+
+    return result;
+  }, [entryRecords, governanceReviewerFilter, governanceMissingFilter]);
 
   const handleStartEdit = () => {
     setTempSuggestion(entry.reviewSuggestion);
@@ -736,12 +855,43 @@ function KnowledgeRow({
 
                 {entryRecords.length > 0 && (
                   <div className="mt-4 pt-4 border-t border-slate-700/50">
-                    <p className="text-xs text-slate-500 flex items-center gap-1.5 mb-3">
-                      <History className="w-3.5 h-3.5" />
-                      治理记录
-                    </p>
+                    <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                      <p className="text-xs text-slate-500 flex items-center gap-1.5">
+                        <History className="w-3.5 h-3.5" />
+                        治理记录
+                        <span className="text-slate-600">({filteredEntryRecords.length}/{entryRecords.length})</span>
+                      </p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-center gap-1.5">
+                          <Filter className="w-3 h-3 text-slate-500" />
+                          <select
+                            value={governanceReviewerFilter}
+                            onChange={(e) => setGovernanceReviewerFilter(e.target.value)}
+                            className="px-2.5 py-1 text-xs bg-slate-800/50 border border-slate-700 rounded-lg text-slate-300 focus:outline-none focus:border-blue-500/50"
+                          >
+                            <option value="all">全部复核人</option>
+                            {uniqueReviewers.map((r) => (
+                              <option key={r} value={r}>{r}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <select
+                            value={governanceMissingFilter}
+                            onChange={(e) => setGovernanceMissingFilter(e.target.value)}
+                            className="px-2.5 py-1 text-xs bg-slate-800/50 border border-slate-700 rounded-lg text-slate-300 focus:outline-none focus:border-blue-500/50"
+                          >
+                            <option value="all">全部修补项</option>
+                            <option value="手册依据">手册依据</option>
+                            <option value="放行结论">放行结论</option>
+                            <option value="后续跟踪">后续跟踪</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
                     <div className="space-y-3">
-                      {entryRecords.map((record) => (
+                      {filteredEntryRecords.length > 0 ? (
+                        filteredEntryRecords.map((record) => (
                         <div
                           key={record.id}
                           className="relative pl-6 pb-3 border-l-2 border-slate-700/50 last:border-l-0 last:pb-0"
@@ -788,25 +938,30 @@ function KnowledgeRow({
                             {record.fromMissingItems.length > 0 && (
                               <div className="mt-2">
                                 <p className="text-xs text-slate-500 mb-1">缺失项修补</p>
-                                <div className="flex flex-wrap gap-1">
+                                <div className="flex flex-wrap gap-1.5">
                                   {record.fromMissingItems.map((item, i) => {
                                     const fixed = !record.toMissingItems.includes(item);
                                     return (
-                                      <span
+                                      <div
                                         key={i}
                                         className={cn(
-                                          'text-xs px-1.5 py-0.5 rounded',
+                                          'flex items-center gap-1 text-xs px-1.5 py-0.5 rounded',
                                           fixed
-                                            ? 'bg-emerald-500/10 text-emerald-400 line-through'
+                                            ? 'bg-emerald-500/10 text-emerald-400'
                                             : 'bg-red-500/10 text-red-400'
                                         )}
                                       >
-                                        {item}
-                                      </span>
+                                        <span className={fixed ? 'line-through' : ''}>{item}</span>
+                                        {fixed && (
+                                          <span className="text-[10px] px-1 py-0.5 bg-emerald-500/20 text-emerald-300 rounded font-medium">
+                                            ✓ 已修补
+                                          </span>
+                                        )}
+                                      </div>
                                     );
                                   })}
                                   {record.toMissingItems.length < record.fromMissingItems.length && (
-                                    <span className="text-xs text-emerald-400">
+                                    <span className="text-xs text-emerald-400 self-center">
                                       已修补 {record.fromMissingItems.length - record.toMissingItems.length} 项
                                     </span>
                                   )}
@@ -821,7 +976,12 @@ function KnowledgeRow({
                             )}
                           </div>
                         </div>
-                      ))}
+                      ))
+                      ) : (
+                        <div className="text-center py-4 text-xs text-slate-500">
+                          暂无符合筛选条件的治理记录
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

@@ -12,7 +12,6 @@ import {
   ArrowRight,
   CheckSquare,
   Square,
-  X,
   ClipboardCopy,
   Check,
   ListTodo,
@@ -20,7 +19,14 @@ import {
   User,
   Calendar,
   Link,
+  Target,
+  MessageSquare,
+  Edit2,
+  Save,
+  ShieldCheck,
 } from 'lucide-react';
+import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { useReviewStore } from '@/store/useReviewStore';
 import { useKnowledgeStore } from '@/store/useKnowledgeStore';
 import { ReviewTask, KnowledgeEntry, BASES } from '@/types';
@@ -28,10 +34,68 @@ import StatusBadge from '@/components/StatusBadge/StatusBadge';
 import { cn } from '@/lib/utils';
 
 const engineers = ['全部', '张伟', '李明', '王芳', '陈强', '刘洋', '赵静'];
+const actionEngineers = ['张伟', '李明', '王芳', '陈强', '刘洋', '赵静'];
+
+interface FollowUpClosure {
+  id: string;
+  itemType: 'task' | 'knowledge';
+  itemId: string;
+  meetingConclusion: string;
+  nextAction: string;
+  actionOwner: string;
+  updatedAt: string;
+}
+
+interface ClosureStore {
+  closures: FollowUpClosure[];
+  setConclusion: (id: string, value: string) => void;
+  setNextAction: (id: string, value: string) => void;
+  setActionOwner: (id: string, value: string) => void;
+  getClosure: (itemType: 'task' | 'knowledge', itemId: string) => FollowUpClosure | undefined;
+  saveClosure: (c: FollowUpClosure) => void;
+}
+
+const useClosureStore = create<ClosureStore>()(
+  persist(
+    (set, get) => ({
+      closures: [],
+      setConclusion: (id, value) =>
+        set((s) => ({
+          closures: s.closures.map((c) => (c.id === id ? { ...c, meetingConclusion: value, updatedAt: new Date().toISOString().split('T')[0] } : c)),
+        })),
+      setNextAction: (id, value) =>
+        set((s) => ({
+          closures: s.closures.map((c) => (c.id === id ? { ...c, nextAction: value, updatedAt: new Date().toISOString().split('T')[0] } : c)),
+        })),
+      setActionOwner: (id, value) =>
+        set((s) => ({
+          closures: s.closures.map((c) => (c.id === id ? { ...c, actionOwner: value, updatedAt: new Date().toISOString().split('T')[0] } : c)),
+        })),
+      getClosure: (itemType, itemId) => {
+        return get().closures.find((c) => c.itemType === itemType && c.itemId === itemId);
+      },
+      saveClosure: (c) =>
+        set((s) => {
+          const idx = s.closures.findIndex((x) => x.itemType === c.itemType && x.itemId === c.itemId);
+          if (idx >= 0) {
+            const updated = [...s.closures];
+            updated[idx] = { ...c, id: updated[idx].id, updatedAt: new Date().toISOString().split('T')[0] };
+            return { closures: updated };
+          }
+          return { closures: [...s.closures, { ...c, id: `CL${Date.now()}`, updatedAt: new Date().toISOString().split('T')[0] }] };
+        }),
+    }),
+    {
+      name: 'weekly-closures-storage',
+      storage: createJSONStorage(() => localStorage),
+    }
+  )
+);
 
 export default function WeeklyPage() {
   const { tasks } = useReviewStore();
   const { entries } = useKnowledgeStore();
+  const { closures, setConclusion, setNextAction, setActionOwner } = useClosureStore();
   const [filterEngineer, setFilterEngineer] = useState('全部');
   const [filterBase, setFilterBase] = useState('全部');
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
@@ -47,7 +111,7 @@ export default function WeeklyPage() {
       return new Set();
     }
   });
-  const [viewMode, setViewMode] = useState<'action' | 'minutes'>('action');
+  const [viewMode, setViewMode] = useState<'action' | 'minutes' | 'closure'>('action');
   const [copied, setCopied] = useState(false);
 
   const toggleFollowUp = useCallback((id: string) => {
@@ -81,21 +145,25 @@ export default function WeeklyPage() {
   );
 
   const applyFilters = useCallback(
-    <T extends { assignee?: string }>(items: T[]): T[] => {
+    <T extends { assignee?: string; base?: string }>(items: T[]): T[] => {
       return items.filter((item) => {
         if (filterEngineer !== '全部' && item.assignee !== filterEngineer) return false;
+        if (filterBase !== '全部' && item.base !== filterBase) return false;
         return true;
       });
     },
-    [filterEngineer]
+    [filterEngineer, filterBase]
   );
 
   const filteredRecurring = useMemo(() => applyFilters(recurringTasks), [applyFilters, recurringTasks]);
   const filteredTimeout = useMemo(() => applyFilters(timeoutTasks), [applyFilters, timeoutTasks]);
   const filteredTraining = useMemo(() => applyFilters(trainingTodos), [applyFilters, trainingTodos]);
   const filteredPendingReview = useMemo(() => {
-    if (filterEngineer === '全部') return pendingReviewEntries;
-    return pendingReviewEntries.filter((e) => e.reviewer === filterEngineer);
+    let result = pendingReviewEntries;
+    if (filterEngineer !== '全部') {
+      result = result.filter((e) => e.reviewer === filterEngineer);
+    }
+    return result;
   }, [pendingReviewEntries, filterEngineer]);
 
   const allFilteredTasks = useMemo(
@@ -123,6 +191,17 @@ export default function WeeklyPage() {
     (item) => followUps.has(item.id)
   ).length;
 
+  const followUpTasks = useMemo(() => {
+    const list: { type: 'task' | 'knowledge'; data: ReviewTask | KnowledgeEntry }[] = [];
+    allFilteredTasks.forEach((t) => {
+      if (followUps.has(t.id)) list.push({ type: 'task', data: t });
+    });
+    filteredPendingReview.forEach((e) => {
+      if (followUps.has(e.id)) list.push({ type: 'knowledge', data: e });
+    });
+    return list;
+  }, [allFilteredTasks, filteredPendingReview, followUps]);
+
   const selectedTask = selectedItem?.type === 'task' ? tasks.find((t) => t.id === selectedItem.id) : null;
   const selectedKnowledge = selectedItem?.type === 'knowledge' ? entries.find((e) => e.id === selectedItem.id) : null;
 
@@ -143,7 +222,7 @@ export default function WeeklyPage() {
         const due = new Date(t.dueDate);
         due.setHours(0, 0, 0, 0);
         const diff = Math.floor((today.getTime() - due.getTime()) / 86400000);
-        lines.push(`  - ${t.faultCode} ${t.faultDescription} | 负责人：${t.assignee || '未分派'} | 已逾期${diff}天`);
+        lines.push(`  - ${t.faultCode} ${t.faultDescription} [${t.base}] | 负责人：${t.assignee || '未分派'} | 已逾期${diff}天`);
       });
       lines.push('');
     }
@@ -156,7 +235,7 @@ export default function WeeklyPage() {
         const due = new Date(t.dueDate);
         due.setHours(0, 0, 0, 0);
         const diff = Math.floor((due.getTime() - today.getTime()) / 86400000);
-        lines.push(`  - ${t.faultCode} ${t.faultDescription} | 负责人：${t.assignee || '未分派'} | 剩余${diff}天`);
+        lines.push(`  - ${t.faultCode} ${t.faultDescription} [${t.base}] | 负责人：${t.assignee || '未分派'} | 剩余${diff}天`);
       });
       lines.push('');
     }
@@ -172,7 +251,7 @@ export default function WeeklyPage() {
     if (filteredTraining.length > 0) {
       lines.push('【培训待办】');
       filteredTraining.forEach((t) => {
-        lines.push(`  - ${t.faultCode} ${t.faultDescription} | 负责人：${t.assignee || '未分派'}`);
+        lines.push(`  - ${t.faultCode} ${t.faultDescription} [${t.base}] | 负责人：${t.assignee || '未分派'}`);
       });
       lines.push('');
     }
@@ -236,6 +315,16 @@ export default function WeeklyPage() {
               <FileBarChart className="w-3.5 h-3.5" />
               会议纪要
             </button>
+            <button
+              onClick={() => setViewMode('closure')}
+              className={cn(
+                'px-3 py-1.5 text-xs font-medium transition-colors flex items-center gap-1.5',
+                viewMode === 'closure' ? 'bg-blue-500/20 text-blue-400' : 'text-slate-400 hover:text-slate-200'
+              )}
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              会后闭环
+            </button>
           </div>
           <div className="flex items-center gap-2">
             <Users className="w-3.5 h-3.5 text-slate-500" />
@@ -265,7 +354,7 @@ export default function WeeklyPage() {
         </div>
       </div>
 
-      {viewMode === 'action' ? (
+      {viewMode === 'action' && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-gradient-to-br from-purple-500/10 to-purple-600/5 border border-purple-500/20 rounded-2xl p-5">
@@ -447,7 +536,9 @@ export default function WeeklyPage() {
             </div>
           </div>
         </>
-      ) : (
+      )}
+
+      {viewMode === 'minutes' && (
         <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
             <div>
@@ -478,6 +569,193 @@ export default function WeeklyPage() {
           </div>
         </div>
       )}
+
+      {viewMode === 'closure' && (
+        <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-slate-100">会后闭环跟踪</h2>
+              <p className="text-xs text-slate-500 mt-1">
+                本周标记跟进的事项共 {followUpTasks.length} 项
+                {filterBase !== '全部' && ` · 基地：${filterBase}`}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Target className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="text-xs text-slate-400">
+                已填结论 {followUpTasks.filter((item) => {
+                  const data = item.data as any;
+                  const c = closures.find((x) => x.itemType === item.type && x.itemId === data.id);
+                  return c && c.meetingConclusion.trim().length > 0;
+                }).length} / {followUpTasks.length}
+              </span>
+            </div>
+          </div>
+          <div className="p-6 space-y-4">
+            {followUpTasks.length === 0 ? (
+              <div className="text-center py-12">
+                <ShieldCheck className="w-12 h-12 text-slate-700 mx-auto mb-3" />
+                <p className="text-sm text-slate-500">暂未标记本周跟进事项</p>
+                <p className="text-xs text-slate-600 mt-1">请先在"行动清单"中勾选需要跟进的事项</p>
+              </div>
+            ) : (
+              followUpTasks.map((item, idx) => {
+                const data = item.data as any;
+                const closure = closures.find((c) => c.itemType === item.type && c.itemId === data.id);
+                const closureId = `${item.type}-${data.id}`;
+                return (
+                  <ClosureCard
+                    key={closureId}
+                    idx={idx}
+                    itemType={item.type}
+                    itemData={data}
+                    closure={closure}
+                    onConclusionChange={(v) => {
+                      useClosureStore.getState().saveClosure({
+                        id: closure?.id || `CL${Date.now()}`,
+                        itemType: item.type,
+                        itemId: data.id,
+                        meetingConclusion: v,
+                        nextAction: closure?.nextAction || '',
+                        actionOwner: closure?.actionOwner || data.assignee || data.reviewer || '',
+                        updatedAt: new Date().toISOString().split('T')[0],
+                      });
+                    }}
+                    onNextActionChange={(v) => {
+                      useClosureStore.getState().saveClosure({
+                        id: closure?.id || `CL${Date.now()}`,
+                        itemType: item.type,
+                        itemId: data.id,
+                        meetingConclusion: closure?.meetingConclusion || '',
+                        nextAction: v,
+                        actionOwner: closure?.actionOwner || data.assignee || data.reviewer || '',
+                        updatedAt: new Date().toISOString().split('T')[0],
+                      });
+                    }}
+                    onOwnerChange={(v) => {
+                      useClosureStore.getState().saveClosure({
+                        id: closure?.id || `CL${Date.now()}`,
+                        itemType: item.type,
+                        itemId: data.id,
+                        meetingConclusion: closure?.meetingConclusion || '',
+                        nextAction: closure?.nextAction || '',
+                        actionOwner: v,
+                        updatedAt: new Date().toISOString().split('T')[0],
+                      });
+                    }}
+                  />
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ClosureCard({
+  idx,
+  itemType,
+  itemData,
+  closure,
+  onConclusionChange,
+  onNextActionChange,
+  onOwnerChange,
+}: {
+  idx: number;
+  itemType: 'task' | 'knowledge';
+  itemData: any;
+  closure?: FollowUpClosure;
+  onConclusionChange: (v: string) => void;
+  onNextActionChange: (v: string) => void;
+  onOwnerChange: (v: string) => void;
+}) {
+  return (
+    <div className="border border-slate-700/50 rounded-xl p-4 bg-slate-900/40">
+      <div className="flex items-start gap-3 mb-4">
+        <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center text-xs font-bold text-blue-400 flex-shrink-0">
+          {idx + 1}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            {itemType === 'task' ? (
+              <>
+                <span className={cn(
+                  'text-xs px-1.5 py-0.5 rounded',
+                  itemData.type === 'recurring' ? 'bg-purple-500/20 text-purple-400' : 'bg-orange-500/20 text-orange-400'
+                )}>
+                  {itemData.type === 'recurring' ? '高频重复' : '超时排故'}
+                </span>
+                <span className="text-xs font-mono text-slate-500">{itemData.faultCode}</span>
+                <span className="text-xs text-slate-400">[{itemData.base}]</span>
+              </>
+            ) : (
+              <>
+                <span className="text-xs px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400">知识复核</span>
+                <span className="text-xs font-mono text-slate-500">{itemData.id}</span>
+                <span className="text-xs text-slate-400">ATA {itemData.ataChapter}</span>
+              </>
+            )}
+          </div>
+          <p className="text-sm text-slate-200 mt-1">
+            {itemType === 'task' ? itemData.faultDescription : itemData.title}
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-3 pl-11">
+        <div>
+          <label className="text-xs text-slate-500 mb-1 flex items-center gap-1.5">
+            <MessageSquare className="w-3.5 h-3.5" />
+            会议结论
+          </label>
+          <textarea
+            value={closure?.meetingConclusion || ''}
+            onChange={(e) => onConclusionChange(e.target.value)}
+            placeholder="记录本次周会关于该事项的结论..."
+            className="w-full mt-1 px-3 py-2 text-xs bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500/50 resize-none"
+            rows={2}
+          />
+        </div>
+        <div>
+          <label className="text-xs text-slate-500 mb-1 flex items-center gap-1.5">
+            <Edit2 className="w-3.5 h-3.5" />
+            下一步动作
+          </label>
+          <textarea
+            value={closure?.nextAction || ''}
+            onChange={(e) => onNextActionChange(e.target.value)}
+            placeholder="明确下一步的具体动作..."
+            className="w-full mt-1 px-3 py-2 text-xs bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500/50 resize-none"
+            rows={2}
+          />
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex-1 min-w-[180px]">
+            <label className="text-xs text-slate-500 mb-1 flex items-center gap-1.5">
+              <User className="w-3.5 h-3.5" />
+              责任人
+            </label>
+            <select
+              value={closure?.actionOwner || itemData.assignee || itemData.reviewer || ''}
+              onChange={(e) => onOwnerChange(e.target.value)}
+              className="w-full mt-1 px-3 py-1.5 text-xs bg-slate-800/50 border border-slate-700 rounded-lg text-slate-300 focus:outline-none focus:border-emerald-500/50"
+            >
+              <option value="">请选择责任人</option>
+              {actionEngineers.map((e) => (
+                <option key={e} value={e}>{e}</option>
+              ))}
+            </select>
+          </div>
+          {closure?.updatedAt && (
+            <div className="flex items-center gap-1.5 mt-5">
+              <Save className="w-3 h-3 text-slate-500" />
+              <span className="text-xs text-slate-500">更新于 {closure.updatedAt}</span>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -600,8 +878,12 @@ function ActionItemRow({
         <p className={cn('text-sm truncate', isFollowUp ? 'text-blue-200' : 'text-slate-200')}>
           {task.faultDescription}
         </p>
-        <div className="flex items-center gap-3 mt-1">
+        <div className="flex items-center gap-3 mt-1 flex-wrap">
           <span className="text-xs font-mono text-slate-500">{task.faultCode}</span>
+          <span className="text-xs px-1.5 py-0.5 bg-slate-700/40 text-slate-400 rounded">
+            <MapPin className="w-3 h-3 inline mr-0.5" style={{ marginBottom: 1 }} />
+            {task.base}
+          </span>
           <span className="text-xs text-slate-400">{task.assignee || '未分派'}</span>
           {task.status !== 'completed' && (
             <span
@@ -732,6 +1014,7 @@ function TaskDetailPanel({
       <p className="text-sm text-slate-200">{task.faultDescription}</p>
 
       <div className="space-y-3 pt-2 border-t border-slate-800">
+        <DetailRow icon={MapPin} label="所属基地" value={task.base} />
         <DetailRow icon={User} label="负责人" value={task.assignee || '未分派'} highlight={!task.assignee} />
         <DetailRow
           icon={Calendar}

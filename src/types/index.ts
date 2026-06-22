@@ -51,6 +51,7 @@ export interface ReviewTask {
   id: string;
   faultCode: string;
   faultDescription: string;
+  base: string;
   type: 'recurring' | 'timeout';
   status: 'pending' | 'assigned' | 'in_progress' | 'completed';
   assignee: string;

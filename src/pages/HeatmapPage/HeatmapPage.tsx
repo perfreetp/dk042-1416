@@ -88,6 +88,7 @@ export default function HeatmapPage() {
     prevFaults.forEach((f) => prevMap.set(f[key], (prevMap.get(f[key]) || 0) + 1));
 
     const diffs: { label: string; value: string }[] = [];
+    const prefix = key === 'ataChapter' ? '【ATA】' : '【基地】';
     curMap.forEach((curCount, k) => {
       const prevCount = prevMap.get(k) || 0;
       const diff = curCount - prevCount;
@@ -95,22 +96,34 @@ export default function HeatmapPage() {
         const name = key === 'ataChapter'
           ? ATA_CHAPTERS.find((c) => c.code === k)?.name || `ATA ${k}`
           : k;
-        diffs.push({ label: name, value: `+${diff}次（${prevCount}→${curCount}）` });
+        diffs.push({ label: `${prefix}${name}`, value: `+${diff}次（${prevCount}→${curCount}）` });
       }
     });
-    diffs.sort((a, b) => parseInt(b.value) - parseInt(a.value));
+    diffs.sort((a, b) => {
+      const aDiff = parseInt(a.value.match(/\+(\d+)次/)?.[1] || '0');
+      const bDiff = parseInt(b.value.match(/\+(\d+)次/)?.[1] || '0');
+      return bDiff - aDiff;
+    });
     return diffs.slice(0, 3);
   };
 
   const totalCountAlert = useMemo(() => {
     if (prevStats.totalCount > 0 && (stats.totalCount - prevStats.totalCount) / prevStats.totalCount > THRESHOLD) {
       const pct = (((stats.totalCount - prevStats.totalCount) / prevStats.totalCount) * 100).toFixed(0);
+      const ataList = getTopContributors(filteredFaults, previousFaults, 'ataChapter');
+      const baseList = getTopContributors(filteredFaults, previousFaults, 'base');
+      const details: { label: string; value: string }[] = [];
+      if (ataList.length > 0) {
+        details.push({ label: '--- ATA章节贡献 ---', value: '' });
+        details.push(...ataList);
+      }
+      if (baseList.length > 0) {
+        details.push({ label: '--- 基地贡献 ---', value: '' });
+        details.push(...baseList);
+      }
       return {
         message: `故障次数较上周期上升${pct}%，点击查看原因`,
-        details: [
-          ...getTopContributors(filteredFaults, previousFaults, 'ataChapter'),
-          ...getTopContributors(filteredFaults, previousFaults, 'base'),
-        ],
+        details,
       };
     }
     return undefined;
@@ -121,19 +134,29 @@ export default function HeatmapPage() {
       const pct = (((avgDowntimeNum - prevAvgDowntimeNum) / prevAvgDowntimeNum) * 100).toFixed(0);
       const curByAta = new Map<string, { total: number; count: number }>();
       const prevByAta = new Map<string, { total: number; count: number }>();
+      const curByBase = new Map<string, { total: number; count: number }>();
+      const prevByBase = new Map<string, { total: number; count: number }>();
       filteredFaults.forEach((f) => {
-        const cur = curByAta.get(f.ataChapter) || { total: 0, count: 0 };
-        cur.total += f.downtimeHours;
-        cur.count += 1;
-        curByAta.set(f.ataChapter, cur);
+        const curAta = curByAta.get(f.ataChapter) || { total: 0, count: 0 };
+        curAta.total += f.downtimeHours;
+        curAta.count += 1;
+        curByAta.set(f.ataChapter, curAta);
+        const curBase = curByBase.get(f.base) || { total: 0, count: 0 };
+        curBase.total += f.downtimeHours;
+        curBase.count += 1;
+        curByBase.set(f.base, curBase);
       });
       previousFaults.forEach((f) => {
-        const prev = prevByAta.get(f.ataChapter) || { total: 0, count: 0 };
-        prev.total += f.downtimeHours;
-        prev.count += 1;
-        prevByAta.set(f.ataChapter, prev);
+        const prevAta = prevByAta.get(f.ataChapter) || { total: 0, count: 0 };
+        prevAta.total += f.downtimeHours;
+        prevAta.count += 1;
+        prevByAta.set(f.ataChapter, prevAta);
+        const prevBase = prevByBase.get(f.base) || { total: 0, count: 0 };
+        prevBase.total += f.downtimeHours;
+        prevBase.count += 1;
+        prevByBase.set(f.base, prevBase);
       });
-      const details: { label: string; value: string }[] = [];
+      const ataDetails: { label: string; value: string }[] = [];
       curByAta.forEach((cur, k) => {
         const prev = prevByAta.get(k);
         if (prev) {
@@ -141,18 +164,45 @@ export default function HeatmapPage() {
           const prevAvg = prev.total / prev.count;
           if (curAvg > prevAvg) {
             const name = ATA_CHAPTERS.find((c) => c.code === k)?.name || `ATA ${k}`;
-            details.push({ label: name, value: `${prevAvg.toFixed(1)}h→${curAvg.toFixed(1)}h` });
+            ataDetails.push({ label: `【ATA】${name}`, value: `${prevAvg.toFixed(1)}h→${curAvg.toFixed(1)}h` });
           }
         }
       });
-      details.sort((a, b) => {
+      ataDetails.sort((a, b) => {
         const bVal = parseFloat(b.value.split('→')[1]);
         const aVal = parseFloat(a.value.split('→')[1]);
         return bVal - aVal;
       });
+      const baseDetails: { label: string; value: string }[] = [];
+      curByBase.forEach((cur, k) => {
+        const prev = prevByBase.get(k);
+        if (prev) {
+          const curAvg = cur.total / cur.count;
+          const prevAvg = prev.total / prev.count;
+          if (curAvg > prevAvg) {
+            baseDetails.push({ label: `【基地】${k}`, value: `${prevAvg.toFixed(1)}h→${curAvg.toFixed(1)}h` });
+          }
+        }
+      });
+      baseDetails.sort((a, b) => {
+        const bVal = parseFloat(b.value.split('→')[1]);
+        const aVal = parseFloat(a.value.split('→')[1]);
+        return bVal - aVal;
+      });
+      const details: { label: string; value: string }[] = [];
+      const ataTop = ataDetails.slice(0, 3);
+      const baseTop = baseDetails.slice(0, 3);
+      if (ataTop.length > 0) {
+        details.push({ label: '--- ATA章节贡献 ---', value: '' });
+        details.push(...ataTop);
+      }
+      if (baseTop.length > 0) {
+        details.push({ label: '--- 基地贡献 ---', value: '' });
+        details.push(...baseTop);
+      }
       return {
         message: `平均停场时间上升${pct}%，点击查看原因`,
-        details: details.slice(0, 3),
+        details,
       };
     }
     return undefined;
@@ -160,22 +210,97 @@ export default function HeatmapPage() {
 
   const recurringAlert = useMemo(() => {
     if (prevStats.recurringCount > 0 && stats.recurringCount > prevStats.recurringCount) {
+      const curRecurring = filteredFaults.filter((f) => f.isRecurring);
+      const prevRecurring = previousFaults.filter((f) => f.isRecurring);
+
       const curRegs = new Map<string, number>();
-      filteredFaults.filter((f) => f.isRecurring).forEach((f) => curRegs.set(f.aircraftReg, (curRegs.get(f.aircraftReg) || 0) + 1));
-      const details: { label: string; value: string }[] = [];
-      curRegs.forEach((count, reg) => {
-        details.push({ label: reg, value: `${count}次` });
+      const prevRegs = new Map<string, number>();
+      const curAta = new Map<string, number>();
+      const prevAta = new Map<string, number>();
+      const curBase = new Map<string, number>();
+      const prevBase = new Map<string, number>();
+
+      curRecurring.forEach((f) => {
+        curRegs.set(f.aircraftReg, (curRegs.get(f.aircraftReg) || 0) + 1);
+        curAta.set(f.ataChapter, (curAta.get(f.ataChapter) || 0) + 1);
+        curBase.set(f.base, (curBase.get(f.base) || 0) + 1);
       });
-      details.sort((a, b) => parseInt(b.value) - parseInt(a.value));
+      prevRecurring.forEach((f) => {
+        prevRegs.set(f.aircraftReg, (prevRegs.get(f.aircraftReg) || 0) + 1);
+        prevAta.set(f.ataChapter, (prevAta.get(f.ataChapter) || 0) + 1);
+        prevBase.set(f.base, (prevBase.get(f.base) || 0) + 1);
+      });
+
+      const regDetails: { label: string; value: string }[] = [];
+      curRegs.forEach((count, reg) => {
+        const prevCount = prevRegs.get(reg) || 0;
+        const diff = count - prevCount;
+        if (diff > 0) {
+          regDetails.push({ label: `【飞机】${reg}`, value: `+${diff}次` });
+        }
+      });
+      regDetails.sort((a, b) => {
+        const aDiff = parseInt(a.value.match(/\+(\d+)次/)?.[1] || '0');
+        const bDiff = parseInt(b.value.match(/\+(\d+)次/)?.[1] || '0');
+        return bDiff - aDiff;
+      });
+
+      const ataDetails: { label: string; value: string }[] = [];
+      curAta.forEach((count, k) => {
+        const prevCount = prevAta.get(k) || 0;
+        const diff = count - prevCount;
+        if (diff > 0) {
+          const name = ATA_CHAPTERS.find((c) => c.code === k)?.name || `ATA ${k}`;
+          ataDetails.push({ label: `【ATA】${name}`, value: `+${diff}次` });
+        }
+      });
+      ataDetails.sort((a, b) => {
+        const aDiff = parseInt(a.value.match(/\+(\d+)次/)?.[1] || '0');
+        const bDiff = parseInt(b.value.match(/\+(\d+)次/)?.[1] || '0');
+        return bDiff - aDiff;
+      });
+
+      const baseDetails: { label: string; value: string }[] = [];
+      curBase.forEach((count, k) => {
+        const prevCount = prevBase.get(k) || 0;
+        const diff = count - prevCount;
+        if (diff > 0) {
+          baseDetails.push({ label: `【基地】${k}`, value: `+${diff}次` });
+        }
+      });
+      baseDetails.sort((a, b) => {
+        const aDiff = parseInt(a.value.match(/\+(\d+)次/)?.[1] || '0');
+        const bDiff = parseInt(b.value.match(/\+(\d+)次/)?.[1] || '0');
+        return bDiff - aDiff;
+      });
+
+      const details: { label: string; value: string }[] = [];
+      const regTop = regDetails.slice(0, 3);
+      const ataTop = ataDetails.slice(0, 3);
+      const baseTop = baseDetails.slice(0, 3);
+
+      if (regTop.length > 0) {
+        details.push({ label: '--- 飞机贡献 ---', value: '' });
+        details.push(...regTop);
+      }
+      if (ataTop.length > 0) {
+        details.push({ label: '--- ATA章节贡献 ---', value: '' });
+        details.push(...ataTop);
+      }
+      if (baseTop.length > 0) {
+        details.push({ label: '--- 基地贡献 ---', value: '' });
+        details.push(...baseTop);
+      }
+
       if (details.length > 0) {
         return {
           message: `重复故障飞机增加${stats.recurringCount - prevStats.recurringCount}架，点击查看原因`,
-          details: details.slice(0, 3),
+          details,
         };
       }
     }
     return undefined;
-  }, [stats.recurringCount, prevStats.recurringCount, filteredFaults]);
+  }, [stats.recurringCount, prevStats.recurringCount, filteredFaults, previousFaults]);
 
   return (
     <div>
