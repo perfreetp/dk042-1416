@@ -30,6 +30,12 @@ export default function HeatmapPage() {
       if (filter.faultCode && !f.faultCode.toLowerCase().includes(filter.faultCode.toLowerCase())) {
         return false;
       }
+      if (filter.startDate && f.date < filter.startDate) {
+        return false;
+      }
+      if (filter.endDate && f.date > filter.endDate) {
+        return false;
+      }
       return true;
     });
   }, [filter]);

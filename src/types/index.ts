@@ -25,6 +25,10 @@ export interface KnowledgeEntry {
   hasReleaseConclusion: boolean;
   hasFollowUp: boolean;
   level: 'high' | 'medium' | 'low';
+  reviewStatus: 'none' | 'pending' | 'in_progress' | 'completed';
+  reviewer: string;
+  reviewSuggestion: string;
+  lastReviewedAt: string;
 }
 
 export interface ReviewTask {
@@ -44,12 +48,17 @@ export interface ReviewTask {
   avgDowntime?: number;
 }
 
+export type TimeRange = 'thisMonth' | 'last3Months' | 'last6Months' | 'custom';
+
 export interface FilterState {
   aircraftTypes: string[];
   bases: string[];
   ataChapters: string[];
   seasons: string[];
   faultCode: string;
+  timeRange: TimeRange;
+  startDate: string;
+  endDate: string;
 }
 
 export interface MetricData {

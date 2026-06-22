@@ -1,13 +1,20 @@
 import { useState } from 'react';
-import { Search, Filter, X, ChevronDown } from 'lucide-react';
+import { Search, Filter, X, ChevronDown, Calendar } from 'lucide-react';
 import { useFilterStore } from '@/store/useFilterStore';
-import { AIRCRAFT_TYPES, BASES, ATA_CHAPTERS, SEASONS } from '@/types';
+import { AIRCRAFT_TYPES, BASES, ATA_CHAPTERS, SEASONS, TimeRange } from '@/types';
 import { cn } from '@/lib/utils';
 
 interface SelectOption {
   label: string;
   value: string;
 }
+
+const TIME_RANGE_OPTIONS: { label: string; value: TimeRange }[] = [
+  { label: '本月', value: 'thisMonth' },
+  { label: '近三个月', value: 'last3Months' },
+  { label: '近半年', value: 'last6Months' },
+  { label: '自定义', value: 'custom' },
+];
 
 function MultiSelect({
   label,
@@ -88,6 +95,83 @@ function MultiSelect({
   );
 }
 
+function TimeRangeSelect() {
+  const { timeRange, startDate, endDate, setTimeRange, setStartDate, setEndDate } = useFilterStore();
+  const [open, setOpen] = useState(false);
+
+  const currentLabel = TIME_RANGE_OPTIONS.find((o) => o.value === timeRange)?.label || '自定义';
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className={cn(
+          'flex items-center gap-2 px-3 py-2 rounded-lg border transition-all text-sm',
+          open
+            ? 'border-blue-500/50 bg-blue-500/10 text-blue-300'
+            : 'border-slate-700 bg-slate-800/50 text-slate-300 hover:border-slate-600'
+        )}
+      >
+        <Calendar className="w-4 h-4 text-slate-400" />
+        <span className="text-slate-300">{currentLabel}</span>
+        <ChevronDown className={cn('w-4 h-4 transition-transform', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <div className="absolute top-full left-0 mt-2 w-72 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden">
+          <div className="p-3 space-y-1">
+            {TIME_RANGE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => {
+                  setTimeRange(opt.value);
+                  if (opt.value !== 'custom') setOpen(false);
+                }}
+                className={cn(
+                  'w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm transition-colors text-left',
+                  timeRange === opt.value
+                    ? 'bg-blue-500/20 text-blue-300'
+                    : 'text-slate-300 hover:bg-slate-700/50'
+                )}
+              >
+                <span>{opt.label}</span>
+                {timeRange === opt.value && (
+                  <svg className="w-4 h-4 ml-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {timeRange === 'custom' && (
+            <div className="border-t border-slate-700 p-3 space-y-3">
+              <div>
+                <label className="text-xs text-slate-400 mb-1 block">开始日期</label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-900/50 border border-slate-600 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-blue-500/50"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 mb-1 block">结束日期</label>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-900/50 border border-slate-600 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-blue-500/50"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function FilterBar() {
   const store = useFilterStore();
   const hasFilters =
@@ -95,13 +179,17 @@ export default function FilterBar() {
     store.bases.length > 0 ||
     store.ataChapters.length > 0 ||
     store.seasons.length > 0 ||
-    store.faultCode.length > 0;
+    store.faultCode.length > 0 ||
+    store.timeRange !== 'last3Months';
 
   return (
     <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800 rounded-2xl p-4 mb-6">
       <div className="flex items-center gap-2 mb-4">
         <Filter className="w-4 h-4 text-slate-400" />
         <span className="text-sm font-medium text-slate-300">筛选条件</span>
+        <span className="text-xs text-slate-500 ml-2">
+          {store.startDate} ~ {store.endDate}
+        </span>
         {hasFilters && (
           <button
             onClick={store.resetFilters}
@@ -114,6 +202,10 @@ export default function FilterBar() {
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
+        <TimeRangeSelect />
+
+        <div className="w-px h-6 bg-slate-700 hidden sm:block" />
+
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
           <input

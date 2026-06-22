@@ -19,6 +19,8 @@ const knowledgeTitles = [
   '通信系统噪音干扰排查',
 ];
 
+const reviewers = ['张伟', '李明', '王芳', '陈强', '刘洋', '赵静'];
+
 function generateKnowledge(): KnowledgeEntry[] {
   const entries: KnowledgeEntry[] = [];
 
@@ -38,6 +40,14 @@ function generateKnowledge(): KnowledgeEntry[] {
       level = 'low';
     }
 
+    const needsReview = refCount > 40 && successRate < 55;
+    const reviewStatuses: KnowledgeEntry['reviewStatus'][] = ['none', 'pending', 'in_progress', 'completed'];
+    const reviewStatus = needsReview
+      ? reviewStatuses[Math.floor(Math.random() * 3) + 1]
+      : reviewStatuses[Math.floor(Math.random() * 4)];
+
+    const hasReviewer = reviewStatus !== 'none';
+
     entries.push({
       id: `K${(i + 1).toString().padStart(3, '0')}`,
       title: knowledgeTitles[i % knowledgeTitles.length],
@@ -48,6 +58,10 @@ function generateKnowledge(): KnowledgeEntry[] {
       hasReleaseConclusion: hasRelease,
       hasFollowUp: hasFollow,
       level,
+      reviewStatus,
+      reviewer: hasReviewer ? reviewers[i % reviewers.length] : '',
+      reviewSuggestion: reviewStatus === 'completed' ? '建议补充手册依据，优化排故步骤顺序。' : '',
+      lastReviewedAt: reviewStatus === 'completed' ? '2025-06-15' : '',
     });
   }
 

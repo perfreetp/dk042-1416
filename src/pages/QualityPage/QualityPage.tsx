@@ -19,8 +19,17 @@ import {
   XCircle,
   Clock,
   Search,
+  ChevronDown,
+  ChevronRight,
+  User,
+  Edit3,
+  Check,
+  Eye,
+  FileText,
+  Filter,
 } from 'lucide-react';
-import { knowledgeEntries, getLowQualityEntries, getIncompleteEntries, getScatterData } from '@/data/knowledge';
+import { useKnowledgeStore } from '@/store/useKnowledgeStore';
+import { getLowQualityEntries, getIncompleteEntries, getScatterData } from '@/data/knowledge';
 import { KnowledgeEntry } from '@/types';
 import { cn } from '@/lib/utils';
 import StatusBadge from '@/components/StatusBadge/StatusBadge';
@@ -31,22 +40,58 @@ const levelColors: Record<string, string> = {
   low: '#EF4444',
 };
 
+const reviewers = ['张伟', '李明', '王芳', '陈强', '刘洋', '赵静'];
+
+const reviewStatusLabels: Record<KnowledgeEntry['reviewStatus'], string> = {
+  none: '未复核',
+  pending: '待复核',
+  in_progress: '复核中',
+  completed: '已完成',
+};
+
 export default function QualityPage() {
+  const { entries, markForReview, setReviewStatus, setReviewer, setReviewSuggestion, completeReview } = useKnowledgeStore();
   const [activeTab, setActiveTab] = useState<'lowQuality' | 'incomplete'>('lowQuality');
   const [searchQuery, setSearchQuery] = useState('');
+  const [reviewFilter, setReviewFilter] = useState<'all' | 'pending' | 'in_progress' | 'completed' | 'none'>('all');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [editingSuggestion, setEditingSuggestion] = useState(false);
+  const [tempSuggestion, setTempSuggestion] = useState('');
 
-  const lowQualityEntries = useMemo(() => getLowQualityEntries(knowledgeEntries), []);
-  const incomplete = useMemo(() => getIncompleteEntries(knowledgeEntries), []);
-  const scatterData = useMemo(() => getScatterData(knowledgeEntries), []);
+  const lowQualityEntries = useMemo(() => getLowQualityEntries(entries), [entries]);
+  const incomplete = useMemo(() => getIncompleteEntries(entries), [entries]);
+  const scatterData = useMemo(() => getScatterData(entries), [entries]);
 
   const filteredEntries = useMemo(() => {
-    if (!searchQuery) return knowledgeEntries;
-    return knowledgeEntries.filter(
-      (e) =>
-        e.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        e.id.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }, [searchQuery]);
+    let result = entries;
+
+    if (searchQuery) {
+      result = result.filter(
+        (e) =>
+          e.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          e.id.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+
+    if (reviewFilter !== 'all') {
+      result = result.filter((e) => e.reviewStatus === reviewFilter);
+    }
+
+    return result;
+  }, [entries, searchQuery, reviewFilter]);
+
+  const pendingCount = entries.filter((e) => e.reviewStatus === 'pending' || e.reviewStatus === 'in_progress').length;
+
+  const handleExpand = (entry: KnowledgeEntry) => {
+    if (expandedId === entry.id) {
+      setExpandedId(null);
+      setEditingSuggestion(false);
+    } else {
+      setExpandedId(entry.id);
+      setTempSuggestion(entry.reviewSuggestion);
+      setEditingSuggestion(false);
+    }
+  };
 
   return (
     <div>
@@ -92,14 +137,14 @@ export default function QualityPage() {
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-purple-500/10 to-purple-600/5 border border-purple-500/20 rounded-2xl p-5">
+        <div className="bg-gradient-to-br from-blue-500/10 to-blue-600/5 border border-blue-500/20 rounded-2xl p-5">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center">
-              <Clock className="w-5 h-5 text-purple-400" />
+            <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center">
+              <Eye className="w-5 h-5 text-blue-400" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-slate-100 font-mono">{incomplete.noFollowUp.length}</p>
-              <p className="text-xs text-slate-400">缺少后续跟踪</p>
+              <p className="text-2xl font-bold text-slate-100 font-mono">{pendingCount}</p>
+              <p className="text-xs text-slate-400">待复核条目</p>
             </div>
           </div>
         </div>
@@ -234,7 +279,11 @@ export default function QualityPage() {
             {activeTab === 'lowQuality' ? (
               <div className="space-y-3">
                 {lowQualityEntries.map((entry) => (
-                  <LowQualityCard key={entry.id} entry={entry} />
+                  <LowQualityCard
+                    key={entry.id}
+                    entry={entry}
+                    onMarkReview={() => markForReview(entry.id)}
+                  />
                 ))}
                 {lowQualityEntries.length === 0 && (
                   <div className="text-center py-8 text-slate-500 text-sm">
@@ -244,7 +293,7 @@ export default function QualityPage() {
               </div>
             ) : (
               <div className="space-y-3">
-                {incomplete.noManual.map((entry) => (
+                {incomplete.noManual.slice(0, 6).map((entry) => (
                   <IncompleteCard
                     key={entry.id}
                     entry={entry}
@@ -262,20 +311,36 @@ export default function QualityPage() {
       </div>
 
       <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+        <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between flex-wrap gap-4">
           <div>
             <h2 className="text-base font-semibold text-slate-100">全部知识条目</h2>
             <p className="text-xs text-slate-500 mt-1">共 {filteredEntries.length} 条知识记录</p>
           </div>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-            <input
-              type="text"
-              placeholder="搜索知识条目..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 py-2 w-64 bg-slate-800/50 border border-slate-700 rounded-lg text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
-            />
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Filter className="w-3.5 h-3.5 text-slate-500" />
+              <select
+                value={reviewFilter}
+                onChange={(e) => setReviewFilter(e.target.value as typeof reviewFilter)}
+                className="px-3 py-1.5 text-xs bg-slate-800/50 border border-slate-700 rounded-lg text-slate-300 focus:outline-none focus:border-blue-500/50"
+              >
+                <option value="all">全部复核状态</option>
+                <option value="pending">待复核</option>
+                <option value="in_progress">复核中</option>
+                <option value="completed">已完成</option>
+                <option value="none">未复核</option>
+              </select>
+            </div>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+              <input
+                type="text"
+                placeholder="搜索知识条目..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 pr-4 py-2 w-56 bg-slate-800/50 border border-slate-700 rounded-lg text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
+              />
+            </div>
           </div>
         </div>
 
@@ -283,71 +348,28 @@ export default function QualityPage() {
           <table className="w-full">
             <thead>
               <tr className="bg-slate-800/30">
-                <th className="text-left text-xs font-medium text-slate-400 px-6 py-3">条目编号</th>
+                <th className="text-left text-xs font-medium text-slate-400 px-6 py-3 w-12"></th>
+                <th className="text-left text-xs font-medium text-slate-400 px-2 py-3">条目编号</th>
                 <th className="text-left text-xs font-medium text-slate-400 px-4 py-3">标题</th>
                 <th className="text-left text-xs font-medium text-slate-400 px-4 py-3">引用次数</th>
                 <th className="text-left text-xs font-medium text-slate-400 px-4 py-3">成功率</th>
-                <th className="text-left text-xs font-medium text-slate-400 px-4 py-3">手册依据</th>
-                <th className="text-left text-xs font-medium text-slate-400 px-4 py-3">放行结论</th>
-                <th className="text-left text-xs font-medium text-slate-400 px-4 py-3">后续跟踪</th>
-                <th className="text-left text-xs font-medium text-slate-400 px-6 py-3">质量等级</th>
+                <th className="text-left text-xs font-medium text-slate-400 px-4 py-3">复核人</th>
+                <th className="text-left text-xs font-medium text-slate-400 px-4 py-3">复核状态</th>
+                <th className="text-left text-xs font-medium text-slate-400 px-4 py-3">质量等级</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/50">
               {filteredEntries.map((entry) => (
-                <tr key={entry.id} className="hover:bg-slate-800/30 transition-colors">
-                  <td className="px-6 py-3.5">
-                    <span className="font-mono text-sm text-blue-400">{entry.id}</span>
-                  </td>
-                  <td className="px-4 py-3.5">
-                    <span className="text-sm text-slate-200">{entry.title}</span>
-                  </td>
-                  <td className="px-4 py-3.5">
-                    <span className="text-sm font-mono text-slate-300">{entry.referenceCount}</span>
-                  </td>
-                  <td className="px-4 py-3.5">
-                    <span
-                      className={cn(
-                        'text-sm font-mono font-medium',
-                        entry.successRate >= 75
-                          ? 'text-emerald-400'
-                          : entry.successRate >= 50
-                          ? 'text-amber-400'
-                          : 'text-red-400'
-                      )}
-                    >
-                      {entry.successRate}%
-                    </span>
-                  </td>
-                  <td className="px-4 py-3.5">
-                    {entry.hasManualReference ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    ) : (
-                      <XCircle className="w-4 h-4 text-red-400/70" />
-                    )}
-                  </td>
-                  <td className="px-4 py-3.5">
-                    {entry.hasReleaseConclusion ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    ) : (
-                      <XCircle className="w-4 h-4 text-red-400/70" />
-                    )}
-                  </td>
-                  <td className="px-4 py-3.5">
-                    {entry.hasFollowUp ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    ) : (
-                      <XCircle className="w-4 h-4 text-red-400/70" />
-                    )}
-                  </td>
-                  <td className="px-6 py-3.5">
-                    <StatusBadge
-                      status={entry.level === 'high' ? 'success' : entry.level === 'medium' ? 'warning' : 'danger'}
-                      label={entry.level === 'high' ? '高质量' : entry.level === 'medium' ? '中质量' : '低质量'}
-                      size="sm"
-                    />
-                  </td>
-                </tr>
+                <KnowledgeRow
+                  key={entry.id}
+                  entry={entry}
+                  expanded={expandedId === entry.id}
+                  onToggle={() => handleExpand(entry)}
+                  tempSuggestion={tempSuggestion}
+                  setTempSuggestion={setTempSuggestion}
+                  editingSuggestion={editingSuggestion}
+                  setEditingSuggestion={setEditingSuggestion}
+                />
               ))}
             </tbody>
           </table>
@@ -357,7 +379,281 @@ export default function QualityPage() {
   );
 }
 
-function LowQualityCard({ entry }: { entry: KnowledgeEntry }) {
+function KnowledgeRow({
+  entry,
+  expanded,
+  onToggle,
+  tempSuggestion,
+  setTempSuggestion,
+  editingSuggestion,
+  setEditingSuggestion,
+}: {
+  entry: KnowledgeEntry;
+  expanded: boolean;
+  onToggle: () => void;
+  tempSuggestion: string;
+  setTempSuggestion: (v: string) => void;
+  editingSuggestion: boolean;
+  setEditingSuggestion: (v: boolean) => void;
+}) {
+  const { setReviewStatus, setReviewer, setReviewSuggestion, completeReview } = useKnowledgeStore();
+  const [showReviewerDropdown, setShowReviewerDropdown] = useState(false);
+
+  const handleStartEdit = () => {
+    setTempSuggestion(entry.reviewSuggestion);
+    setEditingSuggestion(true);
+  };
+
+  const handleSaveSuggestion = () => {
+    setReviewSuggestion(entry.id, tempSuggestion);
+    setEditingSuggestion(false);
+  };
+
+  const handleCompleteReview = () => {
+    completeReview(entry.id, tempSuggestion || entry.reviewSuggestion);
+    setEditingSuggestion(false);
+  };
+
+  return (
+    <>
+      <tr
+        className="hover:bg-slate-800/30 cursor-pointer transition-colors"
+        onClick={onToggle}
+      >
+        <td className="px-6 py-3.5 w-12">
+          <ChevronRight
+            className={cn(
+              'w-4 h-4 text-slate-400 transition-transform',
+              expanded && 'rotate-90'
+            )}
+          />
+        </td>
+        <td className="px-2 py-3.5">
+          <span className="font-mono text-sm text-blue-400">{entry.id}</span>
+        </td>
+        <td className="px-4 py-3.5">
+          <span className="text-sm text-slate-200">{entry.title}</span>
+        </td>
+        <td className="px-4 py-3.5">
+          <span className="text-sm font-mono text-slate-300">{entry.referenceCount}</span>
+        </td>
+        <td className="px-4 py-3.5">
+          <span
+            className={cn(
+              'text-sm font-mono font-medium',
+              entry.successRate >= 75
+                ? 'text-emerald-400'
+                : entry.successRate >= 50
+                ? 'text-amber-400'
+                : 'text-red-400'
+            )}
+          >
+            {entry.successRate}%
+          </span>
+        </td>
+        <td className="px-4 py-3.5">
+          <span className="text-sm text-slate-300">{entry.reviewer || '-'}</span>
+        </td>
+        <td className="px-4 py-3.5">
+          <StatusBadge
+            status={
+              entry.reviewStatus === 'completed'
+                ? 'success'
+                : entry.reviewStatus === 'in_progress'
+                ? 'warning'
+                : entry.reviewStatus === 'pending'
+                ? 'info'
+                : 'pending'
+            }
+            label={reviewStatusLabels[entry.reviewStatus]}
+            size="sm"
+          />
+        </td>
+        <td className="px-4 py-3.5">
+          <StatusBadge
+            status={entry.level === 'high' ? 'success' : entry.level === 'medium' ? 'warning' : 'danger'}
+            label={entry.level === 'high' ? '高质量' : entry.level === 'medium' ? '中质量' : '低质量'}
+            size="sm"
+          />
+        </td>
+      </tr>
+      {expanded && (
+        <tr className="bg-slate-800/20">
+          <td colSpan={8} className="px-6 py-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="md:col-span-1">
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-xs text-slate-500 mb-1">ATA 章节</p>
+                    <p className="text-sm text-slate-200">{entry.ataChapter}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500 mb-1">手册依据</p>
+                    <p className="text-sm flex items-center gap-2">
+                      {entry.hasManualReference ? (
+                        <><CheckCircle2 className="w-4 h-4 text-emerald-400" /><span className="text-slate-300">有</span></>
+                      ) : (
+                        <><XCircle className="w-4 h-4 text-red-400/70" /><span className="text-slate-400">无</span></>
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500 mb-1">最后复核</p>
+                    <p className="text-sm text-slate-300">{entry.lastReviewedAt || '未复核'}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="md:col-span-2 space-y-4">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs text-slate-500 flex items-center gap-1.5">
+                      <User className="w-3.5 h-3.5" />
+                      复核人
+                    </p>
+                    <div className="relative" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => setShowReviewerDropdown(!showReviewerDropdown)}
+                        className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                      >
+                        <Edit3 className="w-3 h-3" />
+                        指派
+                      </button>
+                      {showReviewerDropdown && (
+                        <div className="absolute top-full right-0 mt-1 w-32 bg-slate-700 border border-slate-600 rounded-lg shadow-xl z-10 overflow-hidden">
+                          {reviewers.map((r) => (
+                            <button
+                              key={r}
+                              onClick={() => {
+                                setReviewer(entry.id, r);
+                                if (entry.reviewStatus === 'none') {
+                                  setReviewStatus(entry.id, 'pending');
+                                }
+                                setShowReviewerDropdown(false);
+                              }}
+                              className={cn(
+                                'w-full px-3 py-2 text-xs text-left transition-colors',
+                                entry.reviewer === r
+                                  ? 'bg-blue-500/20 text-blue-300'
+                                  : 'text-slate-300 hover:bg-slate-600/50'
+                              )}
+                            >
+                              {r}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-sm text-slate-200 bg-slate-900/50 rounded-lg px-3 py-2">
+                    {entry.reviewer || '未指派'}
+                  </p>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs text-slate-500 flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5" />
+                      修订建议
+                    </p>
+                    {!editingSuggestion ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleStartEdit();
+                        }}
+                        className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                      >
+                        <Edit3 className="w-3 h-3" />
+                        编辑
+                      </button>
+                    ) : (
+                      <div className="flex gap-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingSuggestion(false);
+                          }}
+                          className="text-xs text-slate-400 hover:text-slate-300"
+                        >
+                          取消
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSaveSuggestion();
+                          }}
+                          className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                        >
+                          <Check className="w-3 h-3" />
+                          保存
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {editingSuggestion ? (
+                    <textarea
+                      value={tempSuggestion}
+                      onChange={(e) => setTempSuggestion(e.target.value)}
+                      className="w-full h-24 px-3 py-2 text-sm bg-slate-900/50 border border-slate-600 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500/50 resize-none"
+                      placeholder="请输入修订建议..."
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  ) : (
+                    <p className="text-sm text-slate-300 bg-slate-900/50 rounded-lg px-3 py-2 min-h-[60px]">
+                      {entry.reviewSuggestion || '暂无修订建议'}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 pt-2">
+                  {entry.reviewStatus !== 'in_progress' && entry.reviewStatus !== 'completed' && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setReviewStatus(entry.id, 'in_progress');
+                      }}
+                      className="px-3 py-1.5 text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-lg hover:bg-amber-500/30 transition-colors"
+                    >
+                      开始复核
+                    </button>
+                  )}
+                  {entry.reviewStatus === 'in_progress' && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCompleteReview();
+                      }}
+                      className="px-3 py-1.5 text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg hover:bg-emerald-500/30 transition-colors flex items-center gap-1.5"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      完成复核
+                    </button>
+                  )}
+                  {entry.reviewStatus === 'none' && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setReviewStatus(entry.id, 'pending');
+                      }}
+                      className="px-3 py-1.5 text-xs bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-lg hover:bg-blue-500/30 transition-colors"
+                    >
+                      标记待复核
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function LowQualityCard({ entry, onMarkReview }: { entry: KnowledgeEntry; onMarkReview: () => void }) {
+  const needsAction = entry.reviewStatus === 'none';
+
   return (
     <div className="p-3 bg-red-500/5 border border-red-500/20 rounded-xl hover:bg-red-500/10 transition-colors">
       <div className="flex items-start gap-3">
@@ -374,6 +670,31 @@ function LowQualityCard({ entry }: { entry: KnowledgeEntry }) {
               成功率 <span className="text-red-400 font-mono">{entry.successRate}%</span>
             </span>
           </div>
+          {needsAction ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onMarkReview();
+              }}
+              className="mt-3 px-2.5 py-1 text-xs bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded-md hover:bg-orange-500/30 transition-colors w-full"
+            >
+              + 标记待复核
+            </button>
+          ) : (
+            <div className="mt-3">
+              <StatusBadge
+                status={
+                  entry.reviewStatus === 'completed'
+                    ? 'success'
+                    : entry.reviewStatus === 'in_progress'
+                    ? 'warning'
+                    : 'info'
+                }
+                label={reviewStatusLabels[entry.reviewStatus]}
+                size="sm"
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>

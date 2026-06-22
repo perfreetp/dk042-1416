@@ -31,16 +31,24 @@ const commonActions = [
 function generateFaults(): FaultRecord[] {
   const faults: FaultRecord[] = [];
   let id = 1;
+  const now = new Date();
 
-  for (let month = 1; month <= 12; month++) {
-    for (let i = 0; i < 15; i++) {
+  for (let monthsAgo = 0; monthsAgo < 12; monthsAgo++) {
+    const date = new Date(now.getFullYear(), now.getMonth() - monthsAgo, 1);
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const seasonIdx = Math.floor((month - 1) / 3);
+    const season = SEASONS[seasonIdx];
+
+    const count = 12 + Math.floor(Math.random() * 8);
+    for (let i = 0; i < count; i++) {
       const ataIndex = Math.floor(Math.random() * ATA_CHAPTERS.length);
       const ata = ATA_CHAPTERS[ataIndex];
       const aircraftType = AIRCRAFT_TYPES[Math.floor(Math.random() * AIRCRAFT_TYPES.length)];
       const base = BASES[Math.floor(Math.random() * BASES.length)];
-      const seasonIdx = Math.floor((month - 1) / 3);
-      const season = SEASONS[seasonIdx];
       const desc = faultDescriptions[ataIndex % faultDescriptions.length];
+      const day = Math.floor(Math.random() * 28 + 1);
+      const dateStr = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
 
       faults.push({
         id: `F${id.toString().padStart(4, '0')}`,
@@ -58,7 +66,7 @@ function generateFaults(): FaultRecord[] {
           commonActions[Math.floor(Math.random() * commonActions.length)],
         ],
         isRecurring: Math.random() > 0.75,
-        date: `2025-${month.toString().padStart(2, '0')}-${Math.floor(Math.random() * 28 + 1).toString().padStart(2, '0')}`,
+        date: dateStr,
         month,
       });
       id++;

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   ClipboardList,
   Repeat,
@@ -15,6 +15,10 @@ import {
   AlertTriangle,
   FileText,
   Plus,
+  Layers,
+  ListTodo,
+  Users,
+  Activity,
 } from 'lucide-react';
 import { useReviewStore } from '@/store/useReviewStore';
 import { getReviewStats } from '@/data/reviews';
@@ -29,11 +33,41 @@ export default function ReviewPage() {
   const stats = getReviewStats(tasks);
   const [activeType, setActiveType] = useState<'all' | 'recurring' | 'timeout'>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'list' | 'tracking'>('list');
+  const [groupBy, setGroupBy] = useState<'assignee' | 'status' | 'training'>('assignee');
 
   const filteredTasks = tasks.filter((t) => {
     if (activeType === 'all') return true;
     return t.type === activeType;
   });
+
+  const groupedData = useMemo(() => {
+    const groups: Record<string, ReviewTask[]> = {};
+
+    if (groupBy === 'assignee') {
+      const assignees = Array.from(new Set(tasks.map((t) => t.assignee || '未分派')));
+      assignees.forEach((a) => {
+        groups[a] = tasks.filter((t) => (t.assignee || '未分派') === a);
+      });
+    } else if (groupBy === 'status') {
+      const statuses: ReviewTask['status'][] = ['pending', 'assigned', 'in_progress', 'completed'];
+      statuses.forEach((s) => {
+        groups[s] = tasks.filter((t) => t.status === s);
+      });
+    } else if (groupBy === 'training') {
+      groups['需要培训'] = tasks.filter((t) => t.trainingRequired);
+      groups['无需培训'] = tasks.filter((t) => !t.trainingRequired);
+    }
+
+    return groups;
+  }, [tasks, groupBy]);
+
+  const statusLabelMap: Record<string, string> = {
+    pending: '待处理',
+    assigned: '已分派',
+    in_progress: '进行中',
+    completed: '已完成',
+  };
 
   return (
     <div>
@@ -80,43 +114,99 @@ export default function ReviewPage() {
       <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl overflow-hidden mb-6">
         <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <h2 className="text-base font-semibold text-slate-100">复盘任务列表</h2>
             <div className="flex bg-slate-800/50 rounded-lg p-0.5">
-              {[
-                { key: 'all', label: '全部' },
-                { key: 'recurring', label: '高频重复' },
-                { key: 'timeout', label: '超时排故' },
-              ].map((tab) => (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveType(tab.key as typeof activeType)}
-                  className={cn(
-                    'px-3 py-1.5 text-xs font-medium rounded-md transition-all',
-                    activeType === tab.key
-                      ? 'bg-slate-700 text-slate-100 shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
-                  )}
-                >
-                  {tab.label}
-                </button>
-              ))}
+              <button
+                onClick={() => setViewMode('list')}
+                className={cn(
+                  'flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-md transition-all',
+                  viewMode === 'list'
+                    ? 'bg-slate-700 text-slate-100 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                )}
+              >
+                <ListTodo className="w-3.5 h-3.5" />
+                列表视图
+              </button>
+              <button
+                onClick={() => setViewMode('tracking')}
+                className={cn(
+                  'flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-md transition-all',
+                  viewMode === 'tracking'
+                    ? 'bg-slate-700 text-slate-100 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                )}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                改进跟踪
+              </button>
             </div>
+
+            {viewMode === 'list' && (
+              <div className="flex bg-slate-800/50 rounded-lg p-0.5">
+                {[
+                  { key: 'all', label: '全部' },
+                  { key: 'recurring', label: '高频重复' },
+                  { key: 'timeout', label: '超时排故' },
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveType(tab.key as typeof activeType)}
+                    className={cn(
+                      'px-3 py-1.5 text-xs font-medium rounded-md transition-all',
+                      activeType === tab.key
+                        ? 'bg-slate-700 text-slate-100 shadow-sm'
+                        : 'text-slate-400 hover:text-slate-200'
+                    )}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {viewMode === 'tracking' && (
+              <div className="flex bg-slate-800/50 rounded-lg p-0.5">
+                {[
+                  { key: 'assignee', label: '按工程师', icon: Users },
+                  { key: 'status', label: '按状态', icon: Activity },
+                  { key: 'training', label: '按培训', icon: GraduationCap },
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setGroupBy(tab.key as typeof groupBy)}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all',
+                      groupBy === tab.key
+                        ? 'bg-slate-700 text-slate-100 shadow-sm'
+                        : 'text-slate-400 hover:text-slate-200'
+                    )}
+                  >
+                    <tab.icon className="w-3.5 h-3.5" />
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div className="text-sm text-slate-400">
             共 <span className="text-slate-200 font-medium">{filteredTasks.length}</span> 项
           </div>
         </div>
 
-        <div className="divide-y divide-slate-800/50">
-          {filteredTasks.map((task) => (
-            <ReviewTaskRow
-              key={task.id}
-              task={task}
-              expanded={expandedId === task.id}
-              onToggle={() => setExpandedId(expandedId === task.id ? null : task.id)}
-            />
-          ))}
-        </div>
+        {viewMode === 'list' ? (
+          <div className="divide-y divide-slate-800/50">
+            {filteredTasks.map((task) => (
+              <ReviewTaskRow
+                key={task.id}
+                task={task}
+                expanded={expandedId === task.id}
+                onToggle={() => setExpandedId(expandedId === task.id ? null : task.id)}
+              />
+            ))}
+          </div>
+        ) : (
+          <TrackingView groupedData={groupedData} groupBy={groupBy} statusLabelMap={statusLabelMap} />
+        )}
       </div>
 
       <div className="bg-gradient-to-br from-blue-500/10 to-cyan-500/5 border border-blue-500/20 rounded-2xl p-6">
@@ -152,6 +242,129 @@ export default function ReviewPage() {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function TrackingView({
+  groupedData,
+  groupBy,
+  statusLabelMap,
+}: {
+  groupedData: Record<string, ReviewTask[]>;
+  groupBy: 'assignee' | 'status' | 'training';
+  statusLabelMap: Record<string, string>;
+}) {
+  const groupIcons: Record<string, any> = {
+    assignee: Users,
+    status: Activity,
+    training: GraduationCap,
+  };
+  const GroupIcon = groupIcons[groupBy] || Layers;
+
+  const getGroupColor = (key: string) => {
+    if (groupBy === 'status') {
+      const colors: Record<string, string> = {
+        pending: 'text-slate-400 bg-slate-500/20',
+        assigned: 'text-blue-400 bg-blue-500/20',
+        in_progress: 'text-amber-400 bg-amber-500/20',
+        completed: 'text-emerald-400 bg-emerald-500/20',
+      };
+      return colors[key] || 'text-slate-400 bg-slate-500/20';
+    }
+    if (groupBy === 'training') {
+      return key === '需要培训'
+        ? 'text-emerald-400 bg-emerald-500/20'
+        : 'text-slate-400 bg-slate-500/20';
+    }
+    return 'text-blue-400 bg-blue-500/20';
+  };
+
+  const getGroupLabel = (key: string) => {
+    if (groupBy === 'status') {
+      return statusLabelMap[key] || key;
+    }
+    return key;
+  };
+
+  const pendingCount = (tasks: ReviewTask[]) =>
+    tasks.filter((t) => t.status !== 'completed').length;
+
+  return (
+    <div className="p-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {Object.entries(groupedData).map(([key, tasks]) => (
+          <div
+            key={key}
+            className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4 hover:border-slate-600/50 transition-colors"
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center', getGroupColor(key))}>
+                <GroupIcon className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-sm font-medium text-slate-200 truncate">{getGroupLabel(key)}</h3>
+                <p className="text-xs text-slate-500">
+                  共 {tasks.length} 项 · 待完成 {pendingCount(tasks)} 项
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {tasks.length === 0 ? (
+                <p className="text-xs text-slate-500 text-center py-4">暂无任务</p>
+              ) : (
+                tasks.map((task) => (
+                  <div
+                    key={task.id}
+                    className="flex items-center gap-2 p-2 rounded-lg bg-slate-900/50 hover:bg-slate-900/80 transition-colors cursor-pointer"
+                  >
+                    <div
+                      className={cn(
+                        'w-2 h-2 rounded-full flex-shrink-0',
+                        task.status === 'completed'
+                          ? 'bg-emerald-400'
+                          : task.status === 'in_progress'
+                          ? 'bg-amber-400'
+                          : task.status === 'assigned'
+                          ? 'bg-blue-400'
+                          : 'bg-slate-500'
+                      )}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-slate-300 truncate">{task.faultDescription}</p>
+                      <p className="text-xs text-slate-500 font-mono">{task.faultCode}</p>
+                    </div>
+                    {task.trainingRequired && (
+                      <GraduationCap className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="mt-3 pt-3 border-t border-slate-700/50">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-500">完成率</span>
+                <span className="text-slate-300 font-medium">
+                  {tasks.length > 0
+                    ? Math.round(((tasks.length - pendingCount(tasks)) / tasks.length) * 100)
+                    : 0}
+                  %
+                </span>
+              </div>
+              <div className="mt-1.5 h-1.5 bg-slate-700/50 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-blue-500 to-emerald-400 rounded-full transition-all"
+                  style={{
+                    width: `${tasks.length > 0 ? ((tasks.length - pendingCount(tasks)) / tasks.length) * 100 : 0}%`,
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
